@@ -16,6 +16,7 @@ from app.api.security import (
     get_beta_access_token,
     require_api_access,
     request_is_authenticated,
+    revoke_session_cookie,
     SESSION_COOKIE_NAME,
     session_cookie_is_valid,
     secure_cookie_settings,
@@ -44,13 +45,37 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     if request.url.path.startswith("/auth/") or request.url.path.startswith("/chat/"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
 
+_ALLOWED_CONFIG_PREFIXES = (
+    "app/configs/",
+    "reports/",
+)
+
+
+def _validate_config_path(path: str, field: str = "path") -> str:
+    """Reject path traversal attempts in user-supplied config file paths."""
+    if not path:
+        raise HTTPException(status_code=400, detail=f"{field} must not be empty")
+    if ".." in path or path.startswith("/") or path.startswith("~"):
+        raise HTTPException(status_code=400, detail=f"invalid {field}")
+    if not any(path.startswith(prefix) for prefix in _ALLOWED_CONFIG_PREFIXES):
+        raise HTTPException(status_code=400, detail=f"{field} must be under app/configs/ or reports/")
+    return path
+
+
 def services():
     return build_services()
+
+
+@api.get("/healthz")
+def healthcheck():
+    return {"ok": True}
 
 
 class SupportAgentCreateRequest(BaseModel):
@@ -135,7 +160,10 @@ def create_auth_session(payload: BetaSessionRequest, response: Response):
 
 
 @api.delete("/auth/session")
-def destroy_auth_session(response: Response):
+def destroy_auth_session(request: Request, response: Response):
+    token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    if token:
+        revoke_session_cookie(token)
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return {"authenticated": False}
 
@@ -168,7 +196,7 @@ async def proxy_chat_completion(payload: ChatProxyRequest, request: Request):
             max_tokens=payload.max_tokens,
         )
     except Exception as exc:  # pragma: no cover - network/provider dependent
-        raise HTTPException(status_code=502, detail=f"chat provider request failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail="chat provider request failed") from exc
     return ChatProxyResponse(text=result.text, model=model_name)
 
 
@@ -184,6 +212,8 @@ def create_agent(payload: AgentCreate, request: Request):
 def create_baseline(agent: AgentCreate, phenotype_suite_path: str, temperament_suite_path: str, request: Request):
     require_api_access(request)
     enforce_rate_limit(request, "baselines", limit=10, window_seconds=60)
+    _validate_config_path(phenotype_suite_path, "phenotype_suite_path")
+    _validate_config_path(temperament_suite_path, "temperament_suite_path")
     svc = services()
     saved = svc.agents.create_agent(agent)
     baseline_id, baseline = svc.evaluations.create_baseline(saved.agent_id, phenotype_suite_path, temperament_suite_path)
@@ -194,6 +224,8 @@ def create_baseline(agent: AgentCreate, phenotype_suite_path: str, temperament_s
 def run_evaluation(agent_id: str, phenotype_suite_path: str, temperament_suite_path: str, request: Request, baseline_agent_id: str | None = None):
     require_api_access(request)
     enforce_rate_limit(request, "evaluations", limit=20, window_seconds=60)
+    _validate_config_path(phenotype_suite_path, "phenotype_suite_path")
+    _validate_config_path(temperament_suite_path, "temperament_suite_path")
     svc = services()
     try:
         return svc.evaluations.evaluate_agent(agent_id, phenotype_suite_path, temperament_suite_path, baseline_agent_id)
@@ -247,6 +279,7 @@ def create_support_agent(payload: SupportAgentCreateRequest, request: Request):
 def create_support_baseline(payload: SupportBaselineCreateRequest, request: Request):
     require_api_access(request)
     enforce_rate_limit(request, "support-baselines", limit=10, window_seconds=60)
+    _validate_config_path(payload.suite_path, "suite_path")
     svc = services()
     agent = svc.support.create_support_agent(payload.config)
     baseline_eval = svc.support.evaluate_support_agent(agent.agent_id, payload.suite_path)
@@ -265,6 +298,7 @@ def create_support_baseline(payload: SupportBaselineCreateRequest, request: Requ
 def run_support_evaluation(payload: SupportEvaluationRequest, request: Request):
     require_api_access(request)
     enforce_rate_limit(request, "support-evaluations", limit=30, window_seconds=60)
+    _validate_config_path(payload.suite_path, "suite_path")
     try:
         return services().support.evaluate_support_agent(
             payload.agent_id,
@@ -310,6 +344,10 @@ def run_support_generation(payload: SupportGenerationRequest, request: Request):
 def run_support_benchmark(payload: SupportBenchmarkRequest, request: Request):
     require_api_access(request)
     enforce_rate_limit(request, "support-benchmark", limit=4, window_seconds=300)
+    _validate_config_path(payload.suite_path, "suite_path")
+    _validate_config_path(payload.baseline_config_path, "baseline_config_path")
+    for i, p in enumerate(payload.parent_config_paths):
+        _validate_config_path(p, f"parent_config_paths[{i}]")
     return services().support.run_support_benchmark(
         suite_path=payload.suite_path,
         baseline_config_path=payload.baseline_config_path,

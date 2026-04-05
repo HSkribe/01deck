@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import hmac
-import hashlib
 import threading
 import time
 from collections import defaultdict, deque
@@ -11,7 +9,6 @@ from collections import defaultdict, deque
 from fastapi import HTTPException, Request
 
 SESSION_COOKIE_NAME = "deck_beta_session"
-DEV_SESSION_SECRET = secrets.token_hex(32)
 DEFAULT_ALLOWED_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:3000",
@@ -20,6 +17,11 @@ DEFAULT_ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 )
+
+# In-memory session store: maps session token -> expiry timestamp
+_sessions: dict[str, float] = {}
+_sessions_lock = threading.Lock()
+SESSION_TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 
 def get_beta_access_token() -> str | None:
@@ -45,9 +47,11 @@ def get_allowed_hosts() -> list[str]:
 
 
 def get_client_id(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
+    # Only trust X-Forwarded-For when explicitly running behind a proxy.
+    if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
+        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
@@ -56,6 +60,10 @@ def get_client_id(request: Request) -> str:
 def request_is_authenticated(request: Request) -> bool:
     expected = get_beta_access_token()
     if not expected:
+        # Auth is explicitly disabled — only allow in local dev, not production.
+        env = os.getenv("01DECK_ENV", "dev").strip().lower()
+        if env == "production":
+            return False
         return True
 
     auth_header = request.headers.get("authorization", "")
@@ -106,19 +114,41 @@ def secure_cookie_settings() -> dict[str, object]:
         "samesite": "lax",
         "secure": secure,
         "path": "/",
+        "max_age": SESSION_TTL_SECONDS,
     }
 
 
-def get_session_secret() -> str:
-    # Keep local development working without shipping a fixed fallback secret.
-    return os.getenv("01DECK_SESSION_SECRET") or get_beta_access_token() or DEV_SESSION_SECRET
-
-
 def create_session_cookie() -> str:
-    digest = hmac.new(get_session_secret().encode("utf-8"), b"deck-beta-session", hashlib.sha256).hexdigest()
-    return digest
+    """Generate a unique random session token and register it in the session store."""
+    token = secrets.token_hex(32)
+    expiry = time.monotonic() + SESSION_TTL_SECONDS
+    with _sessions_lock:
+        _evict_expired_sessions()
+        _sessions[token] = expiry
+    return token
 
 
 def session_cookie_is_valid(value: str) -> bool:
-    expected = create_session_cookie()
-    return bool(value) and secrets.compare_digest(value, expected)
+    if not value:
+        return False
+    with _sessions_lock:
+        expiry = _sessions.get(value)
+        if expiry is None:
+            return False
+        if time.monotonic() > expiry:
+            del _sessions[value]
+            return False
+        return True
+
+
+def revoke_session_cookie(value: str) -> None:
+    with _sessions_lock:
+        _sessions.pop(value, None)
+
+
+def _evict_expired_sessions() -> None:
+    """Remove expired sessions. Must be called with _sessions_lock held."""
+    now = time.monotonic()
+    expired = [k for k, exp in _sessions.items() if now > exp]
+    for k in expired:
+        del _sessions[k]
