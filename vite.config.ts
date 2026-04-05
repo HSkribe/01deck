@@ -14,7 +14,7 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
-      '@01protocol/sdk': path.resolve(__dirname, '../01protocol/packages/sdk/dist/index.js'),
+      '@01protocol/sdk': path.resolve(__dirname, './vendor/01protocol-sdk/dist/index.js'),
     },
   },
 
