@@ -11,6 +11,7 @@ from collections import defaultdict, deque
 from fastapi import HTTPException, Request
 
 SESSION_COOKIE_NAME = "deck_beta_session"
+DEV_SESSION_SECRET = secrets.token_hex(32)
 DEFAULT_ALLOWED_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:3000",
@@ -109,7 +110,8 @@ def secure_cookie_settings() -> dict[str, object]:
 
 
 def get_session_secret() -> str:
-    return os.getenv("01DECK_SESSION_SECRET") or get_beta_access_token() or "local-dev-session-secret"
+    # Keep local development working without shipping a fixed fallback secret.
+    return os.getenv("01DECK_SESSION_SECRET") or get_beta_access_token() or DEV_SESSION_SECRET
 
 
 def create_session_cookie() -> str:
