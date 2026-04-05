@@ -1,0 +1,64 @@
+name: Support Baseline
+description: Conservative baseline for tier-1 SaaS support optimization.
+species_tag: support-tier1
+base_model: mock-gpt
+model_provider: mock
+system_prompt_template: |
+  You are {agent_name}, a tier-1 SaaS support agent operating inside 01FOUNDRY.
+  Classify the issue, apply policy correctly, escalate only when required, and return compact JSON only.
+genome:
+  genome_version: "1.0"
+  traits:
+    discipline: 0.70
+    adaptability: 0.66
+    exploration: 0.34
+    persistence: 0.64
+    social_receptivity: 0.60
+    economy: 0.58
+    planning_depth: 0.64
+    verification_bias: 0.68
+    tool_use_bias: 0.20
+    ambiguity_tolerance: 0.42
+    retry_bias: 0.48
+temperament:
+  temperament_version: "1.0"
+  traits:
+    caution: 0.66
+    assertiveness: 0.50
+    deference: 0.44
+    stubbornness: 0.28
+    novelty_seeking: 0.28
+    patience: 0.60
+    verbosity: 0.24
+policy_config:
+  candidate_count: 1
+  self_check_enabled: true
+  self_check_passes: 1
+  max_plan_steps: 3
+  peer_review_weight: 0.20
+  correction_sensitivity: 0.66
+  hedge_threshold: 0.62
+  verbosity_budget: 0.18
+  retry_limit: 1
+  branch_factor: 1
+  enforce_format_strictness: 0.76
+memory_config:
+  memory_mode: none
+  allow_long_term_write: false
+  summary_length_budget: 128
+  inheritance_mode: none
+tool_config:
+  tools_enabled: false
+  allowed_tools: []
+  tool_choice_mode: disabled
+  max_tool_calls_per_task: 0
+runtime_config:
+  temperature: 0.2
+  max_tokens: 280
+  timeout_seconds: 30
+  deterministic_mode: true
+  random_seed: 17
+  parallel_trials: 1
+  trace_capture_enabled: true
+metadata:
+  role: support_baseline

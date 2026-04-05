@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64" role="img" aria-label="01AI wordmark">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#0f172a" stroke="url(#g)" stroke-width="2"/>
+  <path d="M20 20h12v24H20zM36 20c6 0 10 4 10 10v4c0 6-4 10-10 10h-6V20z" fill="url(#g)"/>
+  <text x="78" y="41" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" fill="url(#g)">
+    01AI
+  </text>
+</svg>

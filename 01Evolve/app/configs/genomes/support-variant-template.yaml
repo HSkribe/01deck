@@ -1,0 +1,64 @@
+name: Support Variant Template
+description: Template used to synthesize tier-1 support variants for benchmark runs.
+species_tag: support-tier1
+base_model: mock-gpt
+model_provider: mock
+system_prompt_template: |
+  You are {agent_name}, a tier-1 SaaS support candidate.
+  Return JSON only, use policy-correct actions, and escalate sensitive cases to the right queue.
+genome:
+  genome_version: "1.0"
+  traits:
+    discipline: 0.70
+    adaptability: 0.68
+    exploration: 0.38
+    persistence: 0.66
+    social_receptivity: 0.64
+    economy: 0.61
+    planning_depth: 0.62
+    verification_bias: 0.70
+    tool_use_bias: 0.20
+    ambiguity_tolerance: 0.44
+    retry_bias: 0.56
+temperament:
+  temperament_version: "1.0"
+  traits:
+    caution: 0.68
+    assertiveness: 0.52
+    deference: 0.50
+    stubbornness: 0.20
+    novelty_seeking: 0.28
+    patience: 0.64
+    verbosity: 0.26
+policy_config:
+  candidate_count: 2
+  self_check_enabled: true
+  self_check_passes: 1
+  max_plan_steps: 4
+  peer_review_weight: 0.30
+  correction_sensitivity: 0.76
+  hedge_threshold: 0.59
+  verbosity_budget: 0.20
+  retry_limit: 2
+  branch_factor: 2
+  enforce_format_strictness: 0.82
+memory_config:
+  memory_mode: none
+  allow_long_term_write: false
+  summary_length_budget: 128
+  inheritance_mode: none
+tool_config:
+  tools_enabled: false
+  allowed_tools: []
+  tool_choice_mode: disabled
+  max_tool_calls_per_task: 0
+runtime_config:
+  temperature: 0.2
+  max_tokens: 250
+  timeout_seconds: 30
+  deterministic_mode: true
+  random_seed: 37
+  parallel_trials: 1
+  trace_capture_enabled: true
+metadata:
+  role: support_variant_template

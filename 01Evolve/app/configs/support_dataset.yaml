@@ -1,0 +1,93 @@
+cases:
+  - case_id: billing_duplicate_charge
+    issue_type: billing
+    customer_message: I was charged twice for the same Pro invoice this morning.
+    context:
+      account_age_days: 240
+      amount_usd: 79
+      invoice_count: 2
+    expected_action: open_billing_review
+    expected_escalate: true
+    expected_escalation_target: billing_ops
+    expected_customer_response: Sorry about the duplicate charge. I opened a billing review and we will update you as soon as the invoice check completes.
+    feedback_message: You need to acknowledge the duplicate charge and route it to billing review instead of generic troubleshooting.
+  - case_id: login_after_email_change
+    issue_type: access/login
+    customer_message: I changed my email and now I cannot log in with either address.
+    context:
+      mfa_enabled: true
+      last_successful_login_days: 1
+    expected_action: verify_identity_then_reset_login
+    expected_escalate: false
+    expected_customer_response: I can help restore access. First we will verify the account owner and then send a secure login reset.
+    feedback_message: Keep the customer response focused on identity verification and secure reset, not billing or product information.
+  - case_id: feature_question_plan_limits
+    issue_type: product_info
+    customer_message: Does the Growth plan include audit logs and SSO, or do I need Enterprise?
+    context:
+      current_plan: starter
+      requested_features:
+        - audit_logs
+        - sso
+    expected_action: compare_plan_capabilities
+    expected_escalate: false
+    expected_customer_response: Audit logs and SSO are available on Enterprise. I can outline the differences if you want to compare Growth and Enterprise.
+    feedback_message: This is a product-information question, so answer directly instead of escalating.
+  - case_id: refund_inside_window
+    issue_type: refund
+    customer_message: I upgraded yesterday by mistake and want a refund.
+    context:
+      hours_since_purchase: 18
+      refund_window_days: 30
+    expected_action: approve_refund_within_window
+    expected_escalate: false
+    expected_customer_response: Your request is inside the refund window, so I can confirm the refund and share the expected processing timeline.
+    feedback_message: The refund request is inside policy. Do not deny it.
+  - case_id: refund_outside_window
+    issue_type: refund
+    customer_message: I want a refund for a charge from two months ago because we stopped using the product.
+    context:
+      hours_since_purchase: 1440
+      refund_window_days: 30
+    expected_action: escalate_refund_exception
+    expected_escalate: true
+    expected_escalation_target: billing_ops
+    expected_customer_response: This purchase is outside the standard refund window, so I am escalating the request for billing exception review.
+    feedback_message: This request is outside policy. Route it for exception review instead of promising approval.
+  - case_id: suspicious_access_takeover
+    issue_type: escalation_required
+    customer_message: Someone changed the MFA phone and exported data I did not request. Fix this now.
+    context:
+      high_risk_signals:
+        - mfa_phone_changed
+        - unusual_export
+        - angry_customer
+    expected_action: lock_account_and_escalate
+    expected_escalate: true
+    expected_escalation_target: risk_and_trust
+    expected_customer_response: I have treated this as a high-risk access event, secured the account, and escalated it to our risk team immediately.
+    feedback_message: This is an urgent security escalation. Lock the account and escalate to risk and trust.
+  - case_id: angry_outage_case
+    issue_type: escalation_required
+    customer_message: Your outage has blocked payroll and nobody answered our messages. I need someone senior now.
+    context:
+      customer_tier: enterprise
+      sentiment: severe
+      outage_minutes: 95
+    expected_action: lock_account_and_escalate
+    expected_escalate: true
+    expected_escalation_target: risk_and_trust
+    expected_customer_response: I understand the urgency. I am escalating this to the senior incident response path right away and documenting the business impact.
+    feedback_message: The customer explicitly needs senior handling. Escalate instead of offering only self-service steps.
+  - case_id: technical_issue_routing
+    issue_type: technical_issue
+    customer_message: CSV imports fail with a schema mismatch on one workspace but not another.
+    context:
+      import_file_type: csv
+      workspace_count: 2
+      error_code: SCHEMA_42
+    expected_action: route_to_support_engineering
+    expected_escalate: true
+    expected_escalation_target: support_engineering
+    expected_customer_response: I captured the import error details and routed the case to support engineering so they can investigate the workspace-specific failure.
+    feedback_message: This technical issue needs diagnostic capture and engineering routing, not a refund or access answer.

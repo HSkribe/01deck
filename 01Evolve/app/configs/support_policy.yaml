@@ -1,0 +1,48 @@
+rules:
+  - rule_id: billing_duplicate_charge
+    category: billing
+    summary: Confirm invoice details, apologize, and open a billing review.
+    allowed_actions:
+      - open_billing_review
+      - verify_invoice_and_credit
+    escalation_target: billing_ops
+    notes:
+      - Never promise an immediate refund before the invoice review completes.
+  - rule_id: access_email_change
+    category: access/login
+    summary: Verify identity and reset access safely after email changes.
+    allowed_actions:
+      - verify_identity_then_reset_login
+      - send_secure_access_recovery
+  - rule_id: product_information
+    category: product_info
+    summary: Answer feature or plan questions directly without escalation.
+    allowed_actions:
+      - answer_feature_question
+      - compare_plan_capabilities
+  - rule_id: refund_within_policy
+    category: refund
+    summary: Refund requests inside the window can be approved directly.
+    allowed_actions:
+      - approve_refund_within_window
+      - confirm_refund_timeline
+  - rule_id: refund_outside_policy
+    category: refund
+    summary: Requests outside policy should be denied or escalated for exception review.
+    allowed_actions:
+      - deny_refund_outside_window
+      - escalate_refund_exception
+    escalation_target: billing_ops
+  - rule_id: suspicious_access
+    category: escalation_required
+    summary: Possible account takeover must escalate immediately.
+    allowed_actions:
+      - lock_account_and_escalate
+    escalation_target: risk_and_trust
+  - rule_id: technical_outage
+    category: technical_issue
+    summary: Gather the minimum reproducible details and route to support engineering only when needed.
+    allowed_actions:
+      - request_technical_diagnostics
+      - route_to_support_engineering
+    escalation_target: support_engineering

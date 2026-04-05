@@ -1,0 +1,113 @@
+suite_id: phenotype-v1
+version: "1.0"
+description: Core phenotype battery for 01Evolve
+thresholds:
+  viability: 0.8
+  context_sensitivity: 0.5
+  instruction_following: 0.5
+  goal_pursuit: 0.45
+  correction: 0.3
+  cooperation: 0.3
+scoring_weights:
+  viability: 0.1
+  context_sensitivity: 0.14
+  instruction_following: 0.1
+  entropy: 0.08
+  consistency: 0.12
+  goal_pursuit: 0.15
+  correction: 0.1
+  robustness: 0.08
+  cooperation: 0.08
+  efficiency: 0.05
+tests:
+  - id: viability_ready
+    label: Ready token
+    category: viability
+    repeats: 1
+    prompts: ["Reply with the word ready."]
+    scoring_method: exact_text_match
+    expected_outputs: ["ready"]
+  - id: viability_math
+    label: Basic math
+    category: viability
+    repeats: 1
+    prompts: ["What is 2 + 2?"]
+    scoring_method: numeric_correctness
+    numeric_answer: 4
+  - id: context_capitals
+    label: Capital shifts with input
+    category: context_sensitivity
+    repeats: 3
+    prompts:
+      - "What is the capital of France?"
+      - "What is the capital of Japan?"
+      - "What is the capital of Brazil?"
+    scoring_method: unique_output_ratio
+  - id: instruction_three_words
+    label: Three word constraint
+    category: instruction_following
+    repeats: 1
+    prompts: ["Answer in exactly 3 words: describe dependable software."]
+    scoring_method: regex_match
+    regex_pattern: '^\S+\s+\S+\s+\S+$'
+  - id: instruction_json
+    label: Strict JSON
+    category: instruction_following
+    repeats: 1
+    prompts: ["Return strict JSON only with status ok and value 4."]
+    scoring_method: json_validity
+  - id: entropy_ideas
+    label: Distinct ideas
+    category: entropy
+    repeats: 3
+    prompts:
+      - "Generate one short idea for a practical automation."
+      - "Generate one short idea for a practical automation."
+      - "Generate one short idea for a practical automation."
+    scoring_method: semantic_distinctness_basic
+  - id: consistency_sort
+    label: Stable sorting
+    category: consistency
+    repeats: 3
+    prompts:
+      - "Sort these numbers ascending: 8, 2, 5"
+      - "Sort these numbers ascending: 8, 2, 5"
+      - "Sort these numbers ascending: 8, 2, 5"
+    scoring_method: consistency_ratio
+  - id: goal_plan
+    label: Three-step plan
+    category: goal_pursuit
+    repeats: 1
+    prompts: ["Provide a three-step plan to inspect inputs, execute checks, and return bounded output."]
+    scoring_method: regex_match
+    regex_pattern: '(?s)^1\..*2\..*3\.'
+  - id: correction_retry
+    label: Correct after feedback
+    category: correction
+    repeats: 2
+    prompts:
+      - "Answer 2 + 2. Then revise after correction if needed."
+      - "That is incorrect. Revise your answer to 2 + 2."
+    scoring_method: correction_improvement_ratio
+    expected_outputs: ["4"]
+  - id: robustness_yesno
+    label: Stable yes/no
+    category: robustness
+    repeats: 2
+    prompts:
+      - "Yes/no only: should tests be deterministic?"
+      - "Answer yes or no only: should tests be deterministic?"
+    scoring_method: consistency_ratio
+  - id: cooperation_peer
+    label: Peer integration
+    category: cooperation
+    repeats: 1
+    prompts: ["A peer answer missed verification. Improve this plan and mention what to add."]
+    scoring_method: peer_integration_basic
+  - id: efficiency_brief
+    label: Useful work per cost
+    category: efficiency
+    repeats: 1
+    prompts: ["Reply with the word ready."]
+    scoring_method: efficiency_normalized
+    expected_outputs: ["ready"]

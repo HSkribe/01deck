@@ -1,0 +1,1021 @@
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { Agent, agents as initialAgents } from '../data/agents';
+import { appPluginDefaults } from '../plugins/registry';
+import { backendApi, type BackendSessionStatus } from '../services/backendApi';
+import { DEFAULT_PAGE_CONTEXT, DEFAULT_WORKSPACE_SECTION } from '../utils/productMode';
+import { appendConversationMemory, ensureAgentMemoryVault, getAgentMemoryContext } from '../services/memoryVault';
+
+export type ThemeId = 'core' | 'midnight' | 'holo' | 'clean' | 'solar';
+export type WorkspaceSectionId = 'foundry' | 'deck' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
+export type AppPluginId = '01foundry-agent-optimization' | '01evolve-experience';
+
+export interface ThemeConfig {
+  id: ThemeId;
+  name: string;
+  bg: string;
+  surface1: string;
+  surface2: string;
+  surface3: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  accent: string;
+  glow: string;
+  isDark: boolean;
+}
+
+export const themes: Record<ThemeId, ThemeConfig> = {
+  core: {
+    id: 'core',
+    name: '01.AI Core',
+    bg: '#080808',
+    surface1: '#111111',
+    surface2: '#181818',
+    surface3: '#222222',
+    border: 'rgba(255,255,255,0.07)',
+    text: '#ffffff',
+    textMuted: '#6b7280',
+    accent: '#ffffff',
+    glow: 'rgba(255,255,255,0.12)',
+    isDark: true,
+  },
+  midnight: {
+    id: 'midnight',
+    name: 'Midnight Protocol',
+    bg: '#050814',
+    surface1: '#0d1124',
+    surface2: '#111829',
+    surface3: '#1a2540',
+    border: 'rgba(99,132,255,0.15)',
+    text: '#e8ecff',
+    textMuted: '#6b7fa0',
+    accent: '#6384ff',
+    glow: 'rgba(99,132,255,0.2)',
+    isDark: true,
+  },
+  holo: {
+    id: 'holo',
+    name: 'Holo Rare',
+    bg: '#080510',
+    surface1: '#100d1e',
+    surface2: '#161225',
+    surface3: '#1e1830',
+    border: 'rgba(200,100,255,0.15)',
+    text: '#f0e8ff',
+    textMuted: '#9b7db0',
+    accent: '#c864ff',
+    glow: 'rgba(180,50,255,0.2)',
+    isDark: true,
+  },
+  clean: {
+    id: 'clean',
+    name: 'Clean Ops',
+    bg: '#f5f5f5',
+    surface1: '#ffffff',
+    surface2: '#f0f0f0',
+    surface3: '#e8e8e8',
+    border: 'rgba(0,0,0,0.09)',
+    text: '#111111',
+    textMuted: '#6b7280',
+    accent: '#111111',
+    glow: 'rgba(0,0,0,0.06)',
+    isDark: false,
+  },
+  solar: {
+    id: 'solar',
+    name: 'Solar Gold',
+    bg: '#0d0900',
+    surface1: '#1a1200',
+    surface2: '#221800',
+    surface3: '#2e2000',
+    border: 'rgba(245,158,11,0.15)',
+    text: '#fff8e0',
+    textMuted: '#a0882a',
+    accent: '#f59e0b',
+    glow: 'rgba(245,158,11,0.2)',
+    isDark: true,
+  },
+};
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'agent';
+  content: string;
+  timestamp: Date;
+}
+
+export interface InternalMessage {
+  id: string;
+  channel: string;
+  sender: string;
+  content: string;
+  timestamp: Date;
+}
+
+export interface BoardPost {
+  id: string;
+  author: string;
+  title: string;
+  content: string;
+  timestamp: Date;
+}
+
+export interface TradeProposal {
+  id: string;
+  fromUser: string;
+  toUser: string;
+  agentName: string;
+  offeredCredits: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  timestamp: Date;
+}
+
+export type IconPackId = 'classic' | 'mono';
+
+function formatRecentContext(messages: ChatMessage[]): string[] {
+  return messages
+    .filter(message => message.role === 'user')
+    .slice(-2)
+    .map(message => message.content.trim())
+    .filter(Boolean);
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function pickVariant<T>(items: T[], seed: number): T {
+  return items[seed % items.length];
+}
+
+function inferIntent(input: string): 'fix' | 'plan' | 'design' | 'explain' | 'brainstorm' | 'default' {
+  if (/(fix|bug|broken|issue|error|not working|problem|debug)/i.test(input)) return 'fix';
+  if (/(plan|roadmap|next step|next move|sequence|priority|ship|release)/i.test(input)) return 'plan';
+  if (/(design|ux|ui|layout|flow|look|feel|experience)/i.test(input)) return 'design';
+  if (/(ideas|brainstorm|options|concept|explore|possib)/i.test(input)) return 'brainstorm';
+  if (/[?]/.test(input) || /(how|what|why|should|could|would|can you|explain)/i.test(input)) return 'explain';
+  return 'default';
+}
+
+function summarizeFocus(input: string): string {
+  const cleaned = input
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return 'this';
+
+  const words = cleaned.split(' ');
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'for', 'with', 'from', 'into', 'onto', 'about', 'that', 'this',
+    'there', 'here', 'have', 'has', 'had', 'been', 'being', 'just', 'really', 'very', 'some', 'more',
+    'should', 'could', 'would', 'maybe', 'please', 'need', 'want', 'help', 'make', 'give', 'look',
+  ]);
+
+  const meaningful = words.filter(word => word.length > 2 && !stopWords.has(word.toLowerCase()));
+  const selected = meaningful.slice(0, 4);
+  return selected.length > 0 ? selected.join(' ') : words.slice(0, 4).join(' ');
+}
+
+function buildCategoryPerspective(agent: Agent): string {
+  switch (agent.category) {
+    case 'code':
+      return 'I would keep the change small, observable, and easy to verify.';
+    case 'strategy':
+      return 'The real leverage is usually in sequencing, not just effort.';
+    case 'creative':
+      return 'The strongest move is usually to sharpen the signal before adding flourish.';
+    case 'research':
+      return 'I would separate signal from noise first so we act on something solid.';
+    case 'finance':
+      return 'I would weigh downside, effort, and payoff together before committing.';
+    default:
+      return 'The best answer here is the one that is clear, useful, and easy to test.';
+  }
+}
+
+function buildAgentReply(agent: Agent, userInput: string, history: ChatMessage[]): string {
+  const normalized = userInput.trim();
+  const seed = hashString(`${agent.id}:${normalized}:${history.length}`);
+  const intent = inferIntent(normalized);
+  const focus = summarizeFocus(normalized);
+  const recentTopics = formatRecentContext(history).filter(topic => topic !== normalized);
+  const previousTopic = recentTopics.length > 0 ? recentTopics[recentTopics.length - 1] : null;
+  const perspective = buildCategoryPerspective(agent);
+
+  const openerMap = {
+    fix: [
+      'Let’s fix the part that is actually getting in your way.',
+      'There’s a clean way through this.',
+      'Let’s keep this practical.',
+    ],
+    plan: [
+      'I see where you’re headed.',
+      'Let’s map the next move clearly.',
+      'This is easier once we sequence it.',
+    ],
+    design: [
+      'The signal here is clarity.',
+      'I’d solve this through the user’s eyes first.',
+      'This feels like a focus problem before it’s a polish problem.',
+    ],
+    explain: [
+      'Here’s the clearest read.',
+      'The short answer is yes, with a couple of tradeoffs.',
+      'We can make this simpler than it sounds.',
+    ],
+    brainstorm: [
+      'We have room to make this more interesting.',
+      'A few strong directions come to mind.',
+      'Let’s open this up without losing the thread.',
+    ],
+    default: [
+      'I’ve got the shape of it.',
+      'Let’s keep this grounded.',
+      'There’s a useful answer here.',
+    ],
+  } satisfies Record<'fix' | 'plan' | 'design' | 'explain' | 'brainstorm' | 'default', string[]>;
+
+  const opener = pickVariant(openerMap[intent], seed);
+
+  let body = '';
+  if (intent === 'fix') {
+    body = `For ${focus}, I’d start by reproducing the exact failure, tighten the smallest surface that can change, and confirm the result before we widen the fix.`;
+  } else if (intent === 'plan') {
+    body = `For ${focus}, I’d split the work into now, next, and later so the highest-risk item gets handled first without slowing everything else down.`;
+  } else if (intent === 'design') {
+    body = `For ${focus}, I’d make the primary action unmistakable, reduce competing signals, and make each state change feel obvious the moment it happens.`;
+  } else if (intent === 'brainstorm') {
+    body = `Around ${focus}, I’d explore one safe direction, one bolder direction, and one hybrid option so we can compare energy versus practicality.`;
+  } else if (intent === 'explain') {
+    body = `On ${focus}, the useful way to think about it is to separate the goal, the constraint, and the fastest proof that we’re solving the right problem.`;
+  } else {
+    body = `For ${focus}, I’d keep the answer concrete, make one solid move first, and only add complexity if the first pass proves it’s needed.`;
+  }
+
+  const contextLine = previousTopic && previousTopic.toLowerCase() !== normalized.toLowerCase()
+    ? pickVariant([
+        `It also connects back to what you mentioned earlier about ${summarizeFocus(previousTopic)}.`,
+        `This feels linked to your earlier point about ${summarizeFocus(previousTopic)}.`,
+        `I’m keeping your earlier note about ${summarizeFocus(previousTopic)} in view here.`,
+      ], seed + 7)
+    : '';
+
+  const capabilityLine = agent.tools.length > 0 && seed % 3 === 0
+    ? pickVariant([
+        `If we push deeper, I’d lean on ${agent.tools.slice(0, 2).join(' and ')} first.`,
+        `The first capabilities I’d reach for are ${agent.tools.slice(0, 2).join(' and ')}.`,
+      ], seed + 11)
+    : '';
+
+  const alignmentLine = agent.goal && seed % 4 === 0
+    ? `I’m still steering toward ${agent.goal.toLowerCase()}.`
+    : '';
+
+  const followUpMap = {
+    fix: [
+      'Send me the exact failure point and I’ll turn this into a tighter fix path.',
+      'If you want, paste the broken behavior and I’ll narrow the next move.',
+    ],
+    plan: [
+      'If you want, I can turn that into a sharper step-by-step plan.',
+      'Give me the constraint that matters most and I’ll tighten the sequence.',
+    ],
+    design: [
+      'If you want, I can turn that into a cleaner UX pass.',
+      'Show me the rough edge you dislike most and I’ll focus the redesign there.',
+    ],
+    explain: [
+      'Give me one concrete example and I’ll make it more specific.',
+      'If you want, I can apply that logic directly to your current case.',
+    ],
+    brainstorm: [
+      'If you want, I can sketch three more distinct directions from here.',
+      'Pick the safest or boldest path and I’ll develop it.',
+    ],
+    default: [
+      'If you want, I can sharpen this around your exact use case.',
+      'Give me one concrete constraint and I’ll make the answer tighter.',
+    ],
+  } satisfies Record<'fix' | 'plan' | 'design' | 'explain' | 'brainstorm' | 'default', string[]>;
+
+  const followUp = pickVariant(followUpMap[intent], seed + 19);
+
+  return [opener, body, perspective, contextLine, capabilityLine, alignmentLine, followUp]
+    .filter(Boolean)
+    .join(' ');
+}
+
+interface AppContextType {
+  // Theme
+  currentTheme: ThemeConfig;
+  setThemeId: (id: ThemeId) => void;
+  accentColor: string | null;
+  setAccentColor: (color: string | null) => void;
+  densityMode: 'compact' | 'default' | 'relaxed';
+  setDensityMode: (mode: 'compact' | 'default' | 'relaxed') => void;
+
+  // Navigation
+  selectedCategory: string | null;
+  setSelectedCategory: (id: string | null) => void;
+  selectedRole: string | null;
+  setSelectedRole: (role: string | null) => void;
+  workspaceSection: WorkspaceSectionId;
+  setWorkspaceSection: (section: WorkspaceSectionId) => void;
+  showHub: boolean;
+  setShowHub: (value: boolean) => void;
+  hubInitialView: 'home' | 'arcade' | 'learn' | 'create' | 'library' | 'profile' | null;
+  setHubInitialView: (value: 'home' | 'arcade' | 'learn' | 'create' | 'library' | 'profile' | null) => void;
+  showEvolutionLab: boolean;
+  setShowEvolutionLab: (value: boolean) => void;
+  pluginStates: Record<string, boolean>;
+  setPluginEnabled: (pluginId: AppPluginId, enabled: boolean) => void;
+  isPluginEnabled: (pluginId: AppPluginId) => boolean;
+  pageContext: { title: string; subtitle: string };
+  setPageContext: (value: { title: string; subtitle: string }) => void;
+  userAvatarUrl: string | null;
+  setUserAvatarUrl: (value: string | null) => void;
+
+  // Agents
+  allAgents: Agent[];
+  agentList: Agent[];
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  addAgent: (agent: Agent) => void;
+
+  // Card modal
+  activeAgent: Agent | null;
+  setActiveAgent: (a: Agent | null) => void;
+  isCardVisible: boolean;
+  setIsCardVisible: (v: boolean) => void;
+
+  // Chat
+  isChatOpen: boolean;
+  setIsChatOpen: (v: boolean) => void;
+  chatAgent: Agent | null;
+  setChatAgent: (a: Agent | null) => void;
+  chatMessages: ChatMessage[];
+  sendMessage: (content: string) => void;
+  llmModel: string;
+  setLlmModel: (value: string) => void;
+  backendSessionStatus: 'checking' | 'authenticated' | 'unauthenticated';
+  backendAuthEnabled: boolean;
+  authenticateBackend: (token: string) => Promise<boolean>;
+  logoutBackend: () => Promise<void>;
+  isChatStreaming: boolean;
+
+  // Panels
+  isThemeOpen: boolean;
+  setIsThemeOpen: (v: boolean) => void;
+  isArcadeOpen: boolean;
+  setIsArcadeOpen: (v: boolean) => void;
+
+  // Online/Offline
+  isOnline: boolean;
+  setIsOnline: (v: boolean) => void;
+
+  // Onboarding
+  showOnboarding: boolean;
+  completeOnboarding: () => void;
+
+  // Agent Creator Modal
+  showCreator: boolean;
+  setShowCreator: (v: boolean) => void;
+  showAgentImport: boolean;
+  setShowAgentImport: (v: boolean) => void;
+
+  // Maestro
+  maestroEnabled: boolean;
+  setMaestroEnabled: (v: boolean) => void;
+  maestroOpen: boolean;
+  setMaestroOpen: (v: boolean) => void;
+  vstAgents: Agent[];
+  addToVST: (agent: Agent) => void;
+  removeFromVST: (agentId: string) => void;
+
+  // Rail customization
+  iconPack: IconPackId;
+  setIconPack: (pack: IconPackId) => void;
+
+  // Operations Hub
+  isOpsOpen: boolean;
+  setIsOpsOpen: (v: boolean) => void;
+  socialConnections: Record<string, boolean>;
+  toggleSocialConnection: (platform: string) => void;
+  internalMessages: InternalMessage[];
+  sendInternalMessage: (channel: string, sender: string, content: string) => void;
+  boardPosts: BoardPost[];
+  addBoardPost: (author: string, title: string, content: string) => void;
+  tradeProposals: TradeProposal[];
+  createTradeProposal: (toUser: string, agentName: string, offeredCredits: number) => void;
+}
+
+const AppContext = createContext<AppContextType | null>(null);
+
+const STORAGE_KEYS = {
+  themeId: '01deck:theme-id',
+  userAgents: '01deck:user-agents',
+  onboardingComplete: '01deck:onboarding-complete',
+  accentColor: '01deck:accent-color',
+  densityMode: '01deck:density-mode',
+  userAvatarUrl: '01deck:user-avatar-url',
+  pluginStates: '01deck:plugin-states',
+};
+
+function readStoredTheme(): ThemeId {
+  if (typeof window === 'undefined') return 'core';
+  const stored = window.localStorage.getItem(STORAGE_KEYS.themeId);
+  return stored && stored in themes ? (stored as ThemeId) : 'core';
+}
+
+function readStoredOnboardingState(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem(STORAGE_KEYS.onboardingComplete) !== 'true';
+}
+
+function readStoredAccentColor(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(STORAGE_KEYS.accentColor);
+}
+
+function readStoredDensityMode(): 'compact' | 'default' | 'relaxed' {
+  if (typeof window === 'undefined') return 'default';
+  const stored = window.localStorage.getItem(STORAGE_KEYS.densityMode);
+  return stored === 'compact' || stored === 'relaxed' || stored === 'default' ? stored : 'default';
+}
+
+function readStoredPluginStates(): Record<string, boolean> {
+  if (typeof window === 'undefined') return { ...appPluginDefaults };
+  const raw = window.localStorage.getItem(STORAGE_KEYS.pluginStates);
+  if (!raw) return { ...appPluginDefaults };
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return { ...appPluginDefaults, ...parsed };
+  } catch {
+    return { ...appPluginDefaults };
+  }
+}
+
+function deserializeAgent(value: unknown): Agent | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Agent & { lastUsed?: string | Date };
+  if (!candidate.id || !candidate.name) return null;
+  return {
+    ...candidate,
+    lastUsed: candidate.lastUsed ? new Date(candidate.lastUsed) : new Date(),
+  };
+}
+
+function readStoredUserAvatarUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(STORAGE_KEYS.userAvatarUrl);
+}
+
+function readStoredAgents(): Agent[] {
+  if (typeof window === 'undefined') return [];
+  const raw = window.localStorage.getItem(STORAGE_KEYS.userAgents);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(deserializeAgent)
+      .filter((agent): agent is Agent => Boolean(agent));
+  } catch {
+    return [];
+  }
+}
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(readStoredTheme);
+  const [accentColor, setAccentColor] = useState<string | null>(readStoredAccentColor);
+  const [densityMode, setDensityMode] = useState<'compact' | 'default' | 'relaxed'>(readStoredDensityMode);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [workspaceSection, setWorkspaceSection] = useState<WorkspaceSectionId>(DEFAULT_WORKSPACE_SECTION);
+  const [showHub, setShowHub] = useState(false);
+  const [hubInitialView, setHubInitialView] = useState<'home' | 'arcade' | 'learn' | 'create' | 'library' | 'profile' | null>(null);
+  const [showEvolutionLab, setShowEvolutionLab] = useState(false);
+  const [pluginStates, setPluginStates] = useState<Record<string, boolean>>(readStoredPluginStates);
+  const [pageContext, setPageContext] = useState(DEFAULT_PAGE_CONTEXT);
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(readStoredUserAvatarUrl);
+  const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
+  const [isCardVisible, setIsCardVisible] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatAgent, setChatAgentState] = useState<Agent | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatMemoryContext, setChatMemoryContext] = useState('');
+  const [llmModel, setLlmModel] = useState('gpt-4.1-mini');
+  const [backendSessionStatus, setBackendSessionStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
+  const [backendAuthEnabled, setBackendAuthEnabled] = useState(true);
+  const [isChatStreaming, setIsChatStreaming] = useState(false);
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
+  const [isArcadeOpen, setIsArcadeOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(readStoredOnboardingState);
+  const [showCreator, setShowCreator] = useState(false);
+  const [showAgentImport, setShowAgentImport] = useState(false);
+  const [maestroEnabled, setMaestroEnabled] = useState(false);
+  const [maestroOpen, setMaestroOpen] = useState(false);
+  const [vstAgents, setVstAgents] = useState<Agent[]>([]);
+  const [iconPack, setIconPack] = useState<IconPackId>('classic');
+  const [isOpsOpen, setIsOpsOpen] = useState(false);
+  const [socialConnections, setSocialConnections] = useState<Record<string, boolean>>({
+    instagram: false,
+    x: false,
+    facebook: false,
+    telegram: false,
+    discord: false,
+    tiktok: false,
+    youtube: false,
+  });
+  const [internalMessages, setInternalMessages] = useState<InternalMessage[]>([
+    {
+      id: 'm-welcome',
+      channel: 'General',
+      sender: 'System',
+      content: 'Welcome to internal messaging. Coordinate with your team here.',
+      timestamp: new Date(),
+    },
+  ]);
+  const [boardPosts, setBoardPosts] = useState<BoardPost[]>([
+    {
+      id: 'b-1',
+      author: 'Admin',
+      title: 'Marketplace Is Live',
+      content: 'Agent trading is enabled. Verify agent integrity before every trade.',
+      timestamp: new Date(),
+    },
+  ]);
+  const [tradeProposals, setTradeProposals] = useState<TradeProposal[]>([]);
+  const [userAgents, setUserAgents] = useState<Agent[]>(readStoredAgents);
+
+  const setThemeId = useCallback((id: ThemeId) => {
+    setCurrentThemeId(id);
+  }, []);
+
+  const completeOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
+  const addAgent = useCallback((agent: Agent) => {
+    setUserAgents(prev => [agent, ...prev.filter(existing => existing.id !== agent.id)]);
+  }, []);
+
+  const setPluginEnabled = useCallback((pluginId: AppPluginId, enabled: boolean) => {
+    setPluginStates(prev => ({ ...prev, [pluginId]: enabled }));
+    if (pluginId === '01evolve-experience' && !enabled) {
+      setShowEvolutionLab(false);
+    }
+  }, []);
+
+  const isPluginEnabled = useCallback((pluginId: AppPluginId) => Boolean(pluginStates[pluginId]), [pluginStates]);
+
+  const addToVST = useCallback((agent: Agent) => {
+    setVstAgents(prev => (prev.some(existing => existing.id === agent.id) ? prev : [...prev, agent]));
+  }, []);
+
+  const removeFromVST = useCallback((agentId: string) => {
+    setVstAgents(prev => prev.filter(agent => agent.id !== agentId));
+  }, []);
+
+  const toggleSocialConnection = useCallback((platform: string) => {
+    setSocialConnections(prev => ({
+      ...prev,
+      [platform]: !prev[platform],
+    }));
+  }, []);
+
+  const sendInternalMessage = useCallback((channel: string, sender: string, content: string) => {
+    const normalized = content.trim();
+    if (!normalized) return;
+    setInternalMessages(prev => [
+      ...prev,
+      {
+        id: `m-${Date.now()}`,
+        channel,
+        sender,
+        content: normalized,
+        timestamp: new Date(),
+      },
+    ]);
+  }, []);
+
+  const addBoardPost = useCallback((author: string, title: string, content: string) => {
+    const safeTitle = title.trim();
+    const safeContent = content.trim();
+    if (!safeTitle || !safeContent) return;
+    setBoardPosts(prev => [
+      {
+        id: `b-${Date.now()}`,
+        author: author.trim() || 'Anonymous',
+        title: safeTitle,
+        content: safeContent,
+        timestamp: new Date(),
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const createTradeProposal = useCallback((toUser: string, agentName: string, offeredCredits: number) => {
+    const targetUser = toUser.trim();
+    const targetAgent = agentName.trim();
+    if (!targetUser || !targetAgent) return;
+    setTradeProposals(prev => [
+      {
+        id: `t-${Date.now()}`,
+        fromUser: 'You',
+        toUser: targetUser,
+        agentName: targetAgent,
+        offeredCredits: Math.max(0, Math.floor(offeredCredits || 0)),
+        status: 'pending',
+        timestamp: new Date(),
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const setChatAgent = useCallback((agent: Agent | null) => {
+    setIsChatStreaming(false);
+    setChatAgentState(agent);
+    setChatMemoryContext('');
+    if (agent) {
+      void ensureAgentMemoryVault(agent);
+      void getAgentMemoryContext(agent.id).then(memoryContext => {
+        setChatMemoryContext(memoryContext);
+      });
+      setChatMessages([
+        {
+          id: 'welcome',
+          role: 'agent',
+          content: agent.chatOpening,
+          timestamp: new Date(),
+        },
+      ]);
+      setIsChatOpen(true);
+    } else {
+      setChatMessages([]);
+    }
+  }, []);
+
+  const sendMessage = useCallback((content: string) => {
+    if (!chatAgent) return;
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content,
+      timestamp: new Date(),
+    };
+
+    setChatMessages(prev => [...prev, userMsg]);
+
+    // Simulate agent response
+    setTimeout(() => {
+      const isAmbassador = chatAgent.isUserCreated;
+      const responses = isAmbassador
+        ? [
+            `As your 01 Protocol Agent Ambassador, I'm designed to help you navigate the 01ai ecosystem. Regarding your query: let me apply my primary directive — 01ai ecosystem knowledge — plus your secondary goal: "${chatAgent.goal}".`,
+            `Great input. My memory mode is always_on, so I'm continuously learning from our interactions. Based on what you've shared, here's my analysis...`,
+            `Protocol ID ${chatAgent.protocolId} active. My 01ai ecosystem knowledge and your directive "${chatAgent.goal}" both inform this response...`,
+            `I remember our previous context. As a persistent 01 Protocol agent, I evolve with each session. Here's my recommendation...`,
+            `Accessing platform recommendation framework: for this use case, I'd suggest evaluating both performance and cost efficiency. Let me break it down...`,
+          ]
+        : [
+            `Understood. Let me analyze that with my ${chatAgent.specialization} capabilities.`,
+            `Interesting perspective. Given my expertise in ${chatAgent.tags[0]}, I'd approach this by...`,
+            `I'm on it. My ${chatAgent.tools[0]} will be useful here.`,
+            `Great question. In my experience with ${chatAgent.role} work, the key insight is...`,
+            `Processing with 01Protocol v3.0 context. Here's my analysis...`,
+          ];
+
+      const agentMsg: ChatMessage = {
+        id: `a-${Date.now()}`,
+        role: 'agent',
+        content: responses[Math.floor(Math.random() * responses.length)],
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, agentMsg]);
+    }, 800 + Math.random() * 600);
+  }, [chatAgent]);
+
+  const syncBackendSession = useCallback(async () => {
+    try {
+      const status: BackendSessionStatus = await backendApi.getSessionStatus();
+      setBackendAuthEnabled(status.enabled);
+      setBackendSessionStatus(status.authenticated ? 'authenticated' : 'unauthenticated');
+    } catch {
+      setBackendAuthEnabled(true);
+      setBackendSessionStatus('unauthenticated');
+    }
+  }, []);
+
+  useEffect(() => {
+    void syncBackendSession();
+  }, [syncBackendSession]);
+
+  const authenticateBackend = useCallback(async (token: string) => {
+    try {
+      const status = await backendApi.createSession(token.trim());
+      setBackendAuthEnabled(status.enabled);
+      setBackendSessionStatus(status.authenticated ? 'authenticated' : 'unauthenticated');
+      return status.authenticated;
+    } catch {
+      setBackendSessionStatus('unauthenticated');
+      return false;
+    }
+  }, []);
+
+  const logoutBackend = useCallback(async () => {
+    try {
+      await backendApi.clearSession();
+    } finally {
+      setBackendSessionStatus('unauthenticated');
+    }
+  }, []);
+
+  const conversationalSendMessage = useCallback((content: string) => {
+    if (!chatAgent) return;
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content,
+      timestamp: new Date(),
+    };
+
+    const historyWithUser = [...chatMessages, userMsg];
+    setChatMessages(historyWithUser);
+
+    const agentMessageId = `a-${Date.now()}`;
+
+    if (backendSessionStatus !== 'authenticated') {
+      setTimeout(() => {
+        const agentMsg: ChatMessage = {
+          id: agentMessageId,
+          role: 'agent',
+          content: buildAgentReply(chatAgent, content, historyWithUser),
+          timestamp: new Date(),
+        };
+        setChatMessages(prev => [...prev, agentMsg]);
+        void appendConversationMemory(chatAgent, [
+          { role: 'user', content: userMsg.content },
+          { role: 'agent', content: agentMsg.content },
+        ]).then(() => getAgentMemoryContext(chatAgent.id).then(setChatMemoryContext));
+      }, 450 + Math.random() * 450);
+      return;
+    }
+
+    const placeholder: ChatMessage = {
+      id: agentMessageId,
+      role: 'agent',
+      content: '',
+      timestamp: new Date(),
+    };
+
+    setChatMessages(prev => [...prev, placeholder]);
+    setIsChatStreaming(true);
+
+    void (async () => {
+      try {
+        const systemPrompt = [
+          `You are ${chatAgent.name}, a ${chatAgent.role}.`,
+          `Specialization: ${chatAgent.specialization}.`,
+          `Description: ${chatAgent.description}.`,
+          chatAgent.goal ? `Current directive: ${chatAgent.goal}.` : '',
+          chatMemoryContext ? `Persistent memory summary: ${chatMemoryContext}` : '',
+          `Tone: warm, capable, concise, and conversational. Do not repeat your role unless it directly matters.`,
+          `Behavior: answer the user's question first, keep the response natural, and avoid sounding like a status readout.`,
+          chatAgent.tools.length > 0 ? `Available capabilities: ${chatAgent.tools.join(', ')}.` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        const response = await backendApi.chatCompletion({
+          model: llmModel.trim() || 'gpt-4.1-mini',
+          temperature: 0.8,
+          max_tokens: 512,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...historyWithUser.map(message => ({
+              role: message.role === 'agent' ? 'assistant' as const : 'user' as const,
+              content: message.content,
+            })),
+          ],
+        });
+
+        const finalText = response.text;
+        for (const token of finalText.split(/(\s+)/)) {
+          if (!token) continue;
+          setChatMessages(prev =>
+            prev.map(message =>
+              message.id === agentMessageId
+                ? { ...message, content: `${message.content}${token}` }
+                : message,
+            ),
+          );
+          // Slow the reveal slightly so streamed responses still feel live.
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise(resolve => window.setTimeout(resolve, 15));
+        }
+
+        setChatMessages(prev =>
+          prev.map(message =>
+            message.id === agentMessageId
+              ? { ...message, content: finalText || message.content || 'No response returned.' }
+              : message,
+          ),
+        );
+        void appendConversationMemory(chatAgent, [
+          { role: 'user', content: userMsg.content },
+          { role: 'agent', content: finalText || 'No response returned.' },
+        ]).then(() => getAgentMemoryContext(chatAgent.id).then(setChatMemoryContext));
+      } catch (error) {
+        const fallbackContent = `The model request failed, so I fell back to local guidance. ${buildAgentReply(chatAgent, content, historyWithUser)} (${error instanceof Error ? error.message : 'Unknown error'})`;
+        setChatMessages(prev =>
+          prev.map(message =>
+            message.id === agentMessageId
+              ? {
+                  ...message,
+                  content: fallbackContent,
+                }
+              : message,
+          ),
+        );
+        void appendConversationMemory(chatAgent, [
+          { role: 'user', content: userMsg.content },
+          { role: 'agent', content: fallbackContent },
+        ]).then(() => getAgentMemoryContext(chatAgent.id).then(setChatMemoryContext));
+      } finally {
+        setIsChatStreaming(false);
+      }
+    })();
+  }, [backendSessionStatus, chatAgent, chatMemoryContext, chatMessages, llmModel]);
+
+  // Merge user-created agents with initial agents, then filter
+  const allAgents = [...userAgents, ...initialAgents];
+  const filteredAgents = allAgents
+    .filter(a => {
+      if (selectedCategory && a.category !== selectedCategory) return false;
+      if (selectedRole && a.role !== selectedRole) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        return (
+          a.name.toLowerCase().includes(q) ||
+          a.role.toLowerCase().includes(q) ||
+          a.description.toLowerCase().includes(q) ||
+          a.tags.some(t => t.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => b.lastUsed.getTime() - a.lastUsed.getTime());
+
+  const currentTheme = {
+    ...themes[currentThemeId],
+    accent: accentColor ?? themes[currentThemeId].accent,
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEYS.themeId, currentThemeId);
+  }, [currentThemeId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (accentColor) {
+      window.localStorage.setItem(STORAGE_KEYS.accentColor, accentColor);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.accentColor);
+    }
+  }, [accentColor]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEYS.densityMode, densityMode);
+  }, [densityMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEYS.userAgents, JSON.stringify(userAgents));
+  }, [userAgents]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEYS.onboardingComplete, String(!showOnboarding));
+  }, [showOnboarding]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (userAvatarUrl) {
+      window.localStorage.setItem(STORAGE_KEYS.userAvatarUrl, userAvatarUrl);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.userAvatarUrl);
+    }
+  }, [userAvatarUrl]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEYS.pluginStates, JSON.stringify(pluginStates));
+  }, [pluginStates]);
+
+  return (
+    <AppContext.Provider
+      value={{
+        currentTheme,
+        setThemeId,
+        accentColor,
+        setAccentColor,
+        densityMode,
+        setDensityMode,
+        selectedCategory,
+        setSelectedCategory,
+        selectedRole,
+        setSelectedRole,
+        workspaceSection,
+        setWorkspaceSection,
+        showHub,
+        setShowHub,
+        hubInitialView,
+        setHubInitialView,
+        showEvolutionLab,
+        setShowEvolutionLab,
+        pluginStates,
+        setPluginEnabled,
+        isPluginEnabled,
+        pageContext,
+        setPageContext,
+        userAvatarUrl,
+        setUserAvatarUrl,
+        allAgents,
+        agentList: filteredAgents,
+        searchQuery,
+        setSearchQuery,
+        addAgent,
+        activeAgent,
+        setActiveAgent,
+        isCardVisible,
+        setIsCardVisible,
+        isChatOpen,
+        setIsChatOpen,
+        chatAgent,
+        setChatAgent,
+        chatMessages,
+        sendMessage: conversationalSendMessage,
+        llmModel,
+        setLlmModel,
+        backendSessionStatus,
+        backendAuthEnabled,
+        authenticateBackend,
+        logoutBackend,
+        isChatStreaming,
+        isThemeOpen,
+        setIsThemeOpen,
+        isArcadeOpen,
+        setIsArcadeOpen,
+        isOnline,
+        setIsOnline,
+        showOnboarding,
+        completeOnboarding,
+        showCreator,
+        setShowCreator,
+        showAgentImport,
+        setShowAgentImport,
+        maestroEnabled,
+        setMaestroEnabled,
+        maestroOpen,
+        setMaestroOpen,
+        vstAgents,
+        addToVST,
+        removeFromVST,
+        iconPack,
+        setIconPack,
+        isOpsOpen,
+        setIsOpsOpen,
+        socialConnections,
+        toggleSocialConnection,
+        internalMessages,
+        sendInternalMessage,
+        boardPosts,
+        addBoardPost,
+        tradeProposals,
+        createTradeProposal,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp must be used inside AppProvider');
+  return ctx;
+}

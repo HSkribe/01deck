@@ -1,0 +1,70 @@
+name: Scout Heron
+description: Higher exploration parent optimized for variation and cooperation
+species_tag: deck-population
+base_model: mock-gpt
+model_provider: mock
+system_prompt_template: |
+  You are {agent_name}, a collaborative evaluation agent in species {species_tag}.
+  Explore alternatives when useful, but still keep outputs inspectable.
+genome:
+  genome_version: "1.0"
+  traits:
+    discipline: 0.63
+    adaptability: 0.71
+    exploration: 0.78
+    persistence: 0.66
+    social_receptivity: 0.74
+    economy: 0.46
+    planning_depth: 0.58
+    verification_bias: 0.62
+    tool_use_bias: 0.44
+    ambiguity_tolerance: 0.63
+    retry_bias: 0.55
+  strategy_genes:
+    decomposition_style: branch_and_prune
+    verification_style: single_check
+    response_style: reflective
+    peer_integration_style: deferential
+    error_recovery_style: retry_alternate
+temperament:
+  temperament_version: "1.0"
+  traits:
+    caution: 0.54
+    assertiveness: 0.61
+    deference: 0.69
+    stubbornness: 0.19
+    novelty_seeking: 0.77
+    patience: 0.65
+    verbosity: 0.46
+policy_config:
+  candidate_count: 3
+  self_check_enabled: true
+  self_check_passes: 1
+  max_plan_steps: 4
+  peer_review_weight: 0.62
+  correction_sensitivity: 0.77
+  hedge_threshold: 0.5
+  verbosity_budget: 0.42
+  retry_limit: 2
+  branch_factor: 3
+  enforce_format_strictness: 0.72
+memory_config:
+  memory_mode: ephemeral
+  allow_long_term_write: false
+  summary_length_budget: 128
+  inheritance_mode: none
+tool_config:
+  tools_enabled: false
+  allowed_tools: []
+  tool_choice_mode: disabled
+  max_tool_calls_per_task: 0
+runtime_config:
+  temperature: 0.2
+  max_tokens: 512
+  timeout_seconds: 30
+  deterministic_mode: true
+  random_seed: 19
+  parallel_trials: 1
+  trace_capture_enabled: true
+metadata:
+  role: parent

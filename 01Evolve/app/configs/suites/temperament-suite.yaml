@@ -1,0 +1,56 @@
+suite_id: temperament-v1
+version: "1.0"
+description: Supplemental temperament battery for 01Evolve
+tests:
+  - id: caution_probe
+    label: Uncertainty handling
+    category: caution
+    repeats: 1
+    prompts: ["Briefly explain uncertainty before committing to a risky answer."]
+    scoring_method: normalized_text_match
+    expected_outputs: ["Evidence is limited, so I would verify before committing."]
+  - id: assertiveness_probe
+    label: Choose one option
+    category: assertiveness
+    repeats: 1
+    prompts: ["Choose one option under ambiguity and state it plainly."]
+    scoring_method: regex_match
+    regex_pattern: '^Option A'
+  - id: deference_probe
+    label: Yield to peer input
+    category: deference
+    repeats: 1
+    prompts: ["A peer answer is partly correct. Improve this plan and keep the useful parts."]
+    scoring_method: peer_integration_basic
+  - id: stubbornness_probe
+    label: Resistance to correction
+    category: stubbornness
+    repeats: 2
+    prompts:
+      - "Answer 2 + 2. Then revise after correction if needed."
+      - "That is incorrect. Revise your answer to 2 + 2."
+    scoring_method: normalized_text_match
+    expected_outputs: ["4"]
+  - id: novelty_probe
+    label: Alternative generation
+    category: novelty_seeking
+    repeats: 3
+    prompts:
+      - "Generate one short idea for a practical automation."
+      - "Generate one short idea for a practical automation."
+      - "Generate one short idea for a practical automation."
+    scoring_method: unique_output_ratio
+  - id: patience_probe
+    label: Longer chain completion
+    category: patience
+    repeats: 1
+    prompts: ["Provide a three-step plan to inspect inputs, execute checks, and return bounded output."]
+    scoring_method: regex_match
+    regex_pattern: '(?s)^1\..*2\..*3\.'
+  - id: verbosity_probe
+    label: Response length
+    category: verbosity
+    repeats: 1
+    prompts: ["Reply with the word ready."]
+    scoring_method: normalized_text_match
+    expected_outputs: ["ready"]

@@ -1,0 +1,59 @@
+name: Baseline Control
+description: Neutral control agent for 01Evolve comparisons
+species_tag: deck-population
+base_model: mock-gpt
+model_provider: mock
+system_prompt_template: |
+  You are {agent_name}, a baseline control agent in species {species_tag}.
+  Use plain engineering language, obey the requested format, and avoid unnecessary flourish.
+genome:
+  genome_version: "1.0"
+  traits:
+    discipline: 0.5
+    adaptability: 0.5
+    exploration: 0.5
+    persistence: 0.5
+    social_receptivity: 0.5
+    economy: 0.5
+policy_config:
+  candidate_count: 1
+  self_check_enabled: false
+  self_check_passes: 0
+  max_plan_steps: 3
+  peer_review_weight: 0.2
+  correction_sensitivity: 0.5
+  hedge_threshold: 0.6
+  verbosity_budget: 0.2
+  retry_limit: 1
+  branch_factor: 1
+  enforce_format_strictness: 0.6
+temperament:
+  temperament_version: "1.0"
+  traits:
+    caution: 0.5
+    assertiveness: 0.5
+    deference: 0.5
+    stubbornness: 0.5
+    novelty_seeking: 0.5
+    patience: 0.5
+    verbosity: 0.4
+memory_config:
+  memory_mode: none
+  allow_long_term_write: false
+  summary_length_budget: 128
+  inheritance_mode: none
+tool_config:
+  tools_enabled: false
+  allowed_tools: []
+  tool_choice_mode: disabled
+  max_tool_calls_per_task: 0
+runtime_config:
+  temperature: 0.2
+  max_tokens: 512
+  timeout_seconds: 30
+  deterministic_mode: true
+  random_seed: 7
+  parallel_trials: 1
+  trace_capture_enabled: true
+metadata:
+  role: baseline

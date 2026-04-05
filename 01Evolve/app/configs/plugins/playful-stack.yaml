@@ -1,0 +1,11 @@
+stack_name: playful-overlay
+description: Enables both serious governance helpers and optional care/fun overlays.
+plugins:
+  - plugin_id: audit_narrative
+    enabled: true
+  - plugin_id: risk_envelope
+    enabled: true
+  - plugin_id: care_guide
+    enabled: true
+  - plugin_id: milestone_celebration
+    enabled: true
