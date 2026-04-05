@@ -6,9 +6,10 @@ import { useApp } from '../context/AppContext';
 import { ProtocolMatch } from './games/ProtocolMatch';
 import { AgentChess } from './games/AgentChess';
 import { AgentChoice } from './games/AgentChoice';
+import { VoidPulse } from './games/VoidPulse';
 import { Agent } from '../data/agents';
 
-type GameTab = 'menu' | 'protocol-match' | 'chess' | 'agent-choice';
+type GameTab = 'menu' | 'protocol-match' | 'chess' | 'agent-choice' | 'void-pulse';
 
 const GAMES = [
   {
@@ -37,6 +38,15 @@ const GAMES = [
     difficulty: 'Varies',
     time: 'Varies',
     reward: 'Custom game',
+  },
+  {
+    id: 'void-pulse' as const,
+    icon: '◎',
+    name: 'Void Pulse',
+    description: 'A rhythm-based micro-arcade game. Destroy threats with perfect timing.',
+    difficulty: 'Hard',
+    time: 'Quick',
+    reward: 'High Score',
   },
 ];
 
@@ -277,6 +287,7 @@ export function ArcadePanel() {
                     {activeGame === 'protocol-match' && <ProtocolMatch />}
                     {activeGame === 'chess' && <AgentChess />}
                     {activeGame === 'agent-choice' && <AgentChoice />}
+                    {activeGame === 'void-pulse' && <VoidPulse />}
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -1,16 +1,19 @@
 import React, { useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export function ProtocolMatch() {
+export function VoidPulse() {
   const { currentTheme: t, chatAgent } = useApp();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Once the iframe loads, we can optionally pass it data about the current agent
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'PROTOCOL_MATCH_SCORE') {
-        console.log(`New Protocol Match Score: ${event.data.score}`);
+      // In the future, we can listen for high scores or events from the Void Pulse game here
+      if (event.data?.type === 'VOID_PULSE_SCORE') {
+        console.log(`New High Score: ${event.data.score}`);
       }
     };
+
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
@@ -21,15 +24,17 @@ export function ProtocolMatch() {
       style={{
         border: `1px solid ${t.border}`,
         boxShadow: `0 8px 32px ${t.glow}`,
-        minHeight: '600px',
+        minHeight: '600px', // Ensure it has enough space
       }}
     >
       <iframe
         ref={iframeRef}
-        src="/games/protocol-match.html"
+        src="/games/void-pulse.html"
         className="w-full h-full border-0 absolute inset-0"
-        title="Protocol Match"
-        style={{ background: '#030509' }}
+        title="Void Pulse"
+        style={{
+          background: '#000',
+        }}
       />
       {chatAgent && (
         <div 
@@ -41,7 +46,7 @@ export function ProtocolMatch() {
             backdropFilter: 'blur(4px)'
           }}
         >
-          {chatAgent.name} is tracking the protocol sequence
+          {chatAgent.name} is watching
         </div>
       )}
     </div>
