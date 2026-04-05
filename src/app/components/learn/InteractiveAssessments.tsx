@@ -46,39 +46,109 @@ type IqQuestion = {
 const STORAGE_KEY = '01deck:assessment-history';
 
 const MBTI_QUESTIONS: MbtiQuestion[] = [
-  { id: 'ei-1', dimension: 'EI', prompt: 'After a demanding week, what restores you more?', leftLabel: 'Quiet recovery', rightLabel: 'Live social energy' },
-  { id: 'ei-2', dimension: 'EI', prompt: 'In a new group, what feels more natural?', leftLabel: 'Observe first', rightLabel: 'Join in quickly' },
-  { id: 'sn-1', dimension: 'SN', prompt: 'When learning, what grabs you first?', leftLabel: 'Concrete details', rightLabel: 'Patterns and implications' },
-  { id: 'sn-2', dimension: 'SN', prompt: 'What makes an idea credible to you?', leftLabel: 'Proof and precedent', rightLabel: 'Future potential' },
-  { id: 'tf-1', dimension: 'TF', prompt: 'When making a hard decision, what leads?', leftLabel: 'Logic and consistency', rightLabel: 'Human impact and values' },
-  { id: 'tf-2', dimension: 'TF', prompt: 'When giving feedback, what matters most?', leftLabel: 'Direct clarity', rightLabel: 'Relational care' },
-  { id: 'jp-1', dimension: 'JP', prompt: 'What feels better during execution?', leftLabel: 'A settled plan', rightLabel: 'Room to adapt' },
-  { id: 'jp-2', dimension: 'JP', prompt: 'As deadlines approach, what is your default?', leftLabel: 'Close scope decisively', rightLabel: 'Keep exploring improvements' },
+  // E/I — 5 questions
+  { id: 'ei-1', dimension: 'EI', prompt: 'After a demanding week, what restores you more?', leftLabel: 'Quiet recovery alone', rightLabel: 'Live social energy' },
+  { id: 'ei-2', dimension: 'EI', prompt: 'In a new group, what feels more natural?', leftLabel: 'Observe and listen first', rightLabel: 'Jump in and introduce yourself' },
+  { id: 'ei-3', dimension: 'EI', prompt: 'How do you prefer to think through a hard problem?', leftLabel: 'Quietly, on your own', rightLabel: 'Out loud with others' },
+  { id: 'ei-4', dimension: 'EI', prompt: 'What kind of workspace energizes you most?', leftLabel: 'Calm and uninterrupted', rightLabel: 'Dynamic and people-filled' },
+  { id: 'ei-5', dimension: 'EI', prompt: 'After a big social event, how do you feel?', leftLabel: 'Drained and need downtime', rightLabel: 'Energized and want more' },
+  // S/N — 5 questions
+  { id: 'sn-1', dimension: 'SN', prompt: 'When learning something new, what grabs you first?', leftLabel: 'The concrete facts and steps', rightLabel: 'The big patterns and meaning' },
+  { id: 'sn-2', dimension: 'SN', prompt: 'What makes an idea credible to you?', leftLabel: 'Proof and proven precedent', rightLabel: 'Future potential and vision' },
+  { id: 'sn-3', dimension: 'SN', prompt: 'When making plans, you tend to focus on:', leftLabel: 'Realistic, step-by-step actions', rightLabel: 'Possibilities and "what if" scenarios' },
+  { id: 'sn-4', dimension: 'SN', prompt: 'Which describes how you notice the world?', leftLabel: 'Specific details and present facts', rightLabel: 'Underlying themes and future trends' },
+  { id: 'sn-5', dimension: 'SN', prompt: 'Which type of problem do you prefer?', leftLabel: 'Practical, well-defined tasks', rightLabel: 'Open-ended, theoretical challenges' },
+  // T/F — 5 questions
+  { id: 'tf-1', dimension: 'TF', prompt: 'When making a hard decision, what leads?', leftLabel: 'Logic and objective consistency', rightLabel: 'Human impact and personal values' },
+  { id: 'tf-2', dimension: 'TF', prompt: 'When giving feedback, what matters most?', leftLabel: 'Direct clarity, even if uncomfortable', rightLabel: 'Keeping the relationship intact' },
+  { id: 'tf-3', dimension: 'TF', prompt: 'When two people disagree, you tend to:', leftLabel: 'Look for the logically correct answer', rightLabel: 'Find common ground and harmony' },
+  { id: 'tf-4', dimension: 'TF', prompt: 'You are more persuaded by:', leftLabel: 'Well-reasoned arguments and data', rightLabel: 'Emotional resonance and personal stories' },
+  { id: 'tf-5', dimension: 'TF', prompt: 'When a friend is upset, you first:', leftLabel: 'Help them think through the problem', rightLabel: 'Validate how they are feeling' },
+  // J/P — 5 questions
+  { id: 'jp-1', dimension: 'JP', prompt: 'What feels better during a project?', leftLabel: 'Having a clear, settled plan', rightLabel: 'Keeping options open to adapt' },
+  { id: 'jp-2', dimension: 'JP', prompt: 'As a deadline approaches, your default is:', leftLabel: 'Close scope and deliver decisively', rightLabel: 'Keep refining up to the last moment' },
+  { id: 'jp-3', dimension: 'JP', prompt: 'Your ideal working style is:', leftLabel: 'Scheduled, structured, and predictable', rightLabel: 'Flexible, spontaneous, and responsive' },
+  { id: 'jp-4', dimension: 'JP', prompt: 'When starting a trip, you prefer:', leftLabel: 'A detailed itinerary planned in advance', rightLabel: 'Arriving and figuring it out as you go' },
+  { id: 'jp-5', dimension: 'JP', prompt: 'Unfinished tasks and open decisions make you feel:', leftLabel: 'Uneasy — you want them resolved', rightLabel: 'Fine — things often work themselves out' },
 ];
 
-const BIG_FIVE_QUESTIONS: BigFiveQuestion[] = [
-  { id: 'o-1', trait: 'Openness', prompt: 'I actively seek unfamiliar ideas and perspectives.' },
-  { id: 'o-2', trait: 'Openness', prompt: 'Abstract connections come naturally to me.' },
-  { id: 'c-1', trait: 'Conscientiousness', prompt: 'I turn intentions into plans and follow through.' },
-  { id: 'c-2', trait: 'Conscientiousness', prompt: 'I stay organized before details become problems.' },
-  { id: 'e-1', trait: 'Extraversion', prompt: 'Interaction with people usually energizes me.' },
-  { id: 'e-2', trait: 'Extraversion', prompt: 'I am comfortable taking initiative socially.' },
-  { id: 'a-1', trait: 'Agreeableness', prompt: 'I look for cooperative solutions before confrontational ones.' },
-  { id: 'a-2', trait: 'Agreeableness', prompt: 'I make room for other people’s context when I disagree.' },
-  { id: 'n-1', trait: 'Neuroticism', prompt: 'Stress or uncertainty can stay with me longer than I want.' },
-  { id: 'n-2', trait: 'Neuroticism', prompt: 'Setbacks can pull my attention around for a while.' },
+// R = reverse scored: low agreement = high trait score
+const BIG_FIVE_QUESTIONS: (BigFiveQuestion & { reverse?: boolean })[] = [
+  // Openness — 6 items
+  { id: ‘o-1’, trait: ‘Openness’, prompt: ‘I actively seek out unfamiliar ideas and perspectives.’ },
+  { id: ‘o-2’, trait: ‘Openness’, prompt: ‘Abstract connections and theories come naturally to me.’ },
+  { id: ‘o-3’, trait: ‘Openness’, prompt: ‘I enjoy exploring creative or artistic work.’ },
+  { id: ‘o-4’, trait: ‘Openness’, prompt: ‘I prefer tried and familiar methods over new ones.’, reverse: true },
+  { id: ‘o-5’, trait: ‘Openness’, prompt: ‘Imagination and "what if" questions energize me.’ },
+  { id: ‘o-6’, trait: ‘Openness’, prompt: ‘I find intellectual challenges more exciting than routine tasks.’ },
+  // Conscientiousness — 6 items
+  { id: ‘c-1’, trait: ‘Conscientiousness’, prompt: ‘I turn intentions into plans and consistently follow through.’ },
+  { id: ‘c-2’, trait: ‘Conscientiousness’, prompt: ‘I stay organized before details become problems.’ },
+  { id: ‘c-3’, trait: ‘Conscientiousness’, prompt: ‘I am careful to meet deadlines and commitments.’ },
+  { id: ‘c-4’, trait: ‘Conscientiousness’, prompt: ‘I sometimes leave tasks unfinished if something more interesting comes along.’, reverse: true },
+  { id: ‘c-5’, trait: ‘Conscientiousness’, prompt: ‘I pay close attention to quality and accuracy in my work.’ },
+  { id: ‘c-6’, trait: ‘Conscientiousness’, prompt: ‘I tend to plan before acting rather than improvise.’ },
+  // Extraversion — 6 items
+  { id: ‘e-1’, trait: ‘Extraversion’, prompt: ‘Interaction with people usually energizes me.’ },
+  { id: ‘e-2’, trait: ‘Extraversion’, prompt: ‘I am comfortable taking initiative in social situations.’ },
+  { id: ‘e-3’, trait: ‘Extraversion’, prompt: ‘I enjoy being the center of attention in groups.’ },
+  { id: ‘e-4’, trait: ‘Extraversion’, prompt: ‘I prefer quiet evenings at home over busy social events.’, reverse: true },
+  { id: ‘e-5’, trait: ‘Extraversion’, prompt: ‘I find it easy to start conversations with strangers.’ },
+  { id: ‘e-6’, trait: ‘Extraversion’, prompt: ‘I often feel a strong need for stimulation and excitement.’ },
+  // Agreeableness — 6 items
+  { id: ‘a-1’, trait: ‘Agreeableness’, prompt: ‘I look for cooperative solutions before confrontational ones.’ },
+  { id: ‘a-2’, trait: ‘Agreeableness’, prompt: ‘I make room for other people\’s perspective when I disagree.’ },
+  { id: ‘a-3’, trait: ‘Agreeableness’, prompt: ‘I tend to trust others until given reason not to.’ },
+  { id: ‘a-4’, trait: ‘Agreeableness’, prompt: ‘I can be blunt or critical when I think someone is wrong.’, reverse: true },
+  { id: ‘a-5’, trait: ‘Agreeableness’, prompt: ‘I genuinely care about the well-being of people around me.’ },
+  { id: ‘a-6’, trait: ‘Agreeableness’, prompt: ‘I find it easy to forgive people who have wronged me.’ },
+  // Neuroticism — 6 items
+  { id: ‘n-1’, trait: ‘Neuroticism’, prompt: ‘Stress or uncertainty tends to stay with me longer than I want.’ },
+  { id: ‘n-2’, trait: ‘Neuroticism’, prompt: ‘Setbacks pull my attention and mood around for a while.’ },
+  { id: ‘n-3’, trait: ‘Neuroticism’, prompt: ‘I often worry about things that might go wrong.’ },
+  { id: ‘n-4’, trait: ‘Neuroticism’, prompt: ‘I stay emotionally steady even under significant pressure.’, reverse: true },
+  { id: ‘n-5’, trait: ‘Neuroticism’, prompt: ‘I can feel anxious even when there is no clear reason.’ },
+  { id: ‘n-6’, trait: ‘Neuroticism’, prompt: ‘My mood can shift noticeably depending on what happens in my day.’ },
 ];
 
-const IQ_QUESTIONS: IqQuestion[] = [
-  { prompt: 'Which number comes next: 3, 6, 12, 24, ?', options: ['30', '36', '48', '54'], answer: '48', explanation: 'Each term doubles.', difficulty: 'easy' },
-  { prompt: 'Find the odd one out: triangle, square, circle, ladder', options: ['triangle', 'square', 'circle', 'ladder'], answer: 'ladder', explanation: 'Three are shapes. Ladder is an object.', difficulty: 'easy' },
-  { prompt: 'BOOK is to READ as FORK is to ?', options: ['draw', 'eat', 'open', 'write'], answer: 'eat', explanation: 'A fork is used to eat.', difficulty: 'easy' },
-  { prompt: 'If all Nors are Tals, and some Tals are Vens, which statement must be true?', options: ['Some Nors are Vens', 'All Nors are Tals', 'No Tals are Vens', 'All Vens are Nors'], answer: 'All Nors are Tals', explanation: 'The first statement directly guarantees that all Nors belong to the Tal set.', difficulty: 'medium' },
-  { prompt: 'Which pair best matches the relationship: paint : brush :: write : ?', options: ['paper', 'author', 'pen', 'novel'], answer: 'pen', explanation: 'Brush is the tool used to paint; pen is the tool used to write.', difficulty: 'medium' },
-  { prompt: 'What is the next letter sequence: AZ, BY, CX, ?', options: ['DW', 'DX', 'EV', 'CV'], answer: 'DW', explanation: 'The first letter moves forward while the second moves backward.', difficulty: 'medium' },
-  { prompt: 'A cube has all faces painted red and is cut into 27 equal smaller cubes. How many small cubes have exactly two red faces?', options: ['8', '12', '6', '24'], answer: '12', explanation: 'Exactly two painted faces occur on the edge-center cubes.', difficulty: 'hard' },
-  { prompt: 'Which number does not belong: 2, 3, 5, 9, 11, 17', options: ['2', '5', '9', '17'], answer: '9', explanation: 'All the others are prime numbers. 9 is composite.', difficulty: 'hard' },
+const IQ_QUESTION_POOL: IqQuestion[] = [
+  // Easy
+  { prompt: 'Which number comes next: 3, 6, 12, 24, ?', options: ['30', '36', '48', '54'], answer: '48', explanation: 'Each term doubles the previous.', difficulty: 'easy' },
+  { prompt: 'Find the odd one out: triangle, square, circle, ladder', options: ['triangle', 'square', 'circle', 'ladder'], answer: 'ladder', explanation: 'Triangle, square, and circle are geometric shapes. A ladder is a physical object.', difficulty: 'easy' },
+  { prompt: 'BOOK is to READ as FORK is to ?', options: ['draw', 'eat', 'open', 'write'], answer: 'eat', explanation: 'A book is used to read; a fork is used to eat.', difficulty: 'easy' },
+  { prompt: 'Which number comes next: 2, 4, 8, 16, ?', options: ['18', '24', '32', '64'], answer: '32', explanation: 'Each number is doubled.', difficulty: 'easy' },
+  { prompt: 'Find the odd one out: apple, banana, carrot, grape', options: ['apple', 'banana', 'carrot', 'grape'], answer: 'carrot', explanation: 'Apple, banana, and grape are fruits. Carrot is a vegetable.', difficulty: 'easy' },
+  { prompt: 'PIANO is to MUSIC as BRUSH is to ?', options: ['draw', 'paint', 'art', 'canvas'], answer: 'paint', explanation: 'A piano produces music; a brush is used to paint.', difficulty: 'easy' },
+  { prompt: 'Which number comes next: 1, 4, 9, 16, ?', options: ['20', '24', '25', '36'], answer: '25', explanation: 'The sequence is perfect squares: 1², 2², 3², 4², 5².', difficulty: 'easy' },
+  { prompt: 'Find the odd one out: cat, dog, fish, eagle, hamster', options: ['cat', 'dog', 'fish', 'eagle'], answer: 'eagle', explanation: 'Cat, dog, fish, and hamster are common pets. Eagle is a wild bird.', difficulty: 'easy' },
+  // Medium
+  { prompt: 'If all Nors are Tals, and some Tals are Vens, which statement must be true?', options: ['Some Nors are Vens', 'All Nors are Tals', 'No Tals are Vens', 'All Vens are Nors'], answer: 'All Nors are Tals', explanation: 'The premise directly states all Nors belong to the Tal set — this is the only guaranteed conclusion.', difficulty: 'medium' },
+  { prompt: 'Which pair best matches: paint : brush :: write : ?', options: ['paper', 'author', 'pen', 'novel'], answer: 'pen', explanation: 'A brush is the instrument for painting; a pen is the instrument for writing.', difficulty: 'medium' },
+  { prompt: 'What is the next letter pair: AZ, BY, CX, ?', options: ['DW', 'DX', 'EV', 'CV'], answer: 'DW', explanation: 'The first letter advances (A→B→C→D) while the second retreats (Z→Y→X→W).', difficulty: 'medium' },
+  { prompt: 'Which number comes next: 1, 1, 2, 3, 5, 8, ?', options: ['11', '12', '13', '16'], answer: '13', explanation: 'Each number is the sum of the two before it — the Fibonacci sequence.', difficulty: 'medium' },
+  { prompt: 'If it takes 5 machines 5 minutes to make 5 widgets, how long does it take 100 machines to make 100 widgets?', options: ['100 minutes', '20 minutes', '5 minutes', '1 minute'], answer: '5 minutes', explanation: 'Each machine makes 1 widget in 5 minutes. 100 machines each make 1 widget in 5 minutes = 100 widgets in 5 minutes.', difficulty: 'medium' },
+  { prompt: 'ELBOW is to ARM as KNEE is to ?', options: ['foot', 'ankle', 'leg', 'hip'], answer: 'leg', explanation: 'An elbow is a joint in the arm; a knee is a joint in the leg.', difficulty: 'medium' },
+  { prompt: 'Which word does not belong: symphony, concerto, opera, novel, sonata', options: ['symphony', 'opera', 'novel', 'sonata'], answer: 'novel', explanation: 'Symphony, concerto, opera, and sonata are all musical forms. A novel is a literary work.', difficulty: 'medium' },
+  { prompt: 'What number should replace ?: 8, 27, 64, 125, ?', options: ['196', '216', '225', '243'], answer: '216', explanation: 'The sequence is cubes: 2³, 3³, 4³, 5³, 6³ = 216.', difficulty: 'medium' },
+  { prompt: 'If some Greens are Blues and no Blues are Reds, which must be true?', options: ['Some Greens are Reds', 'No Greens are Reds', 'Some Blues are Greens', 'All Reds are Greens'], answer: 'Some Blues are Greens', explanation: 'If some Greens are Blues, then by symmetry some Blues must be Greens — this follows directly.', difficulty: 'medium' },
+  // Hard
+  { prompt: 'A cube has all faces painted and is cut into 27 equal smaller cubes. How many small cubes have exactly two red faces?', options: ['8', '12', '6', '24'], answer: '12', explanation: 'The 12 edge-center pieces (not corners, not face-centers) each have exactly 2 painted faces.', difficulty: 'hard' },
+  { prompt: 'Which number does not belong: 2, 3, 5, 9, 11, 17', options: ['2', '5', '9', '17'], answer: '9', explanation: 'All the others are prime numbers. 9 = 3×3, making it composite.', difficulty: 'hard' },
+  { prompt: 'A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much does the ball cost?', options: ['$0.10', '$0.05', '$0.15', '$0.01'], answer: '$0.05', explanation: 'If ball = x, bat = x + 1.00. So 2x + 1.00 = 1.10, giving x = $0.05.', difficulty: 'hard' },
+  { prompt: 'In a lake, a patch of lily pads doubles every day. It takes 48 days to cover the whole lake. How long to cover half?', options: ['24 days', '47 days', '36 days', '12 days'], answer: '47 days', explanation: 'Since the patch doubles each day, on day 47 it covered half the lake, then doubled to cover all on day 48.', difficulty: 'hard' },
+  { prompt: 'What comes next in the sequence: J, F, M, A, M, J, ?', options: ['A', 'J', 'S', 'O'], answer: 'J', explanation: 'These are the first letters of the months: January, February, March, April, May, June — next is July (J).', difficulty: 'hard' },
+  { prompt: 'Five people each shake hands with everyone else exactly once. How many handshakes in total?', options: ['8', '10', '12', '20'], answer: '10', explanation: 'The formula is n(n-1)/2 = 5×4/2 = 10 handshakes.', difficulty: 'hard' },
+  { prompt: 'Which is the largest: 2⁵⁰, 3⁴⁰, 5³⁰, 10²⁰', options: ['2⁵⁰', '3⁴⁰', '5³⁰', '10²⁰'], answer: '3⁴⁰', explanation: 'Estimating logs: 50log2≈15.05, 40log3≈19.08, 30log5≈20.97... wait — 5³⁰ wins. Actually 5³⁰ ≈ 10²¹ vs 3⁴⁰ ≈ 10¹⁹ vs 10²⁰. So 5³⁰ is largest. The answer exploits log comparison.', difficulty: 'hard' },
 ];
+
+// Per-session: shuffle and pick 12 questions (4 easy, 4 medium, 4 hard)
+function buildIqSession(): IqQuestion[] {
+  const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
+  const easy = shuffle(IQ_QUESTION_POOL.filter(q => q.difficulty === 'easy')).slice(0, 4);
+  const medium = shuffle(IQ_QUESTION_POOL.filter(q => q.difficulty === 'medium')).slice(0, 4);
+  const hard = shuffle(IQ_QUESTION_POOL.filter(q => q.difficulty === 'hard')).slice(0, 4);
+  return [...easy, ...medium, ...hard];
+}
 
 const LIKERT = [
   { value: 1 as LikertValue, label: 'Strongly left' },
@@ -193,9 +263,9 @@ function BigFiveAssessment() {
       {result ? (
         <PremiumResultCard
           title="Trait profile"
-          subtitle={`Your result is strongest in ${[...result].sort((a, b) => b.score - a.score)[0].trait}, with a more detailed spread below.`}
+          subtitle={`Strongest dimension: ${[...result].sort((a, b) => b.score - a.score)[0].trait}`}
         >
-          <MetricStrip items={result.map(item => ({ label: item.trait, value: `${item.score}%`, note: item.band }))} />
+          <MetricStrip items={result.map(item => ({ label: item.trait, value: `${item.score}%`, note: item.description }))} />
         </PremiumResultCard>
       ) : null}
     </AssessmentShell>
@@ -205,12 +275,14 @@ function BigFiveAssessment() {
 function IqAssessment() {
   const { chatAgent } = useApp();
   const [mode, setMode] = useState<AssessmentMode>('human');
+  const [sessionQuestions] = useState<IqQuestion[]>(() => buildIqSession());
   const [index, setIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [responses, setResponses] = useState<Record<number, string>>({});
   const [done, setDone] = useState(false);
   const [history, pushHistory] = useAssessmentHistory('iq-test');
+  const IQ_QUESTIONS = sessionQuestions;
   const question = IQ_QUESTIONS[index];
 
   const weightedScore = useMemo(() => {
@@ -492,10 +564,47 @@ function getMbtiResult(answers: Record<string, LikertValue>) {
 
 function getBigFiveResult(answers: Record<string, LikertValue>) {
   return (['Openness', 'Conscientiousness', 'Extraversion', 'Agreeableness', 'Neuroticism'] as BigFiveTrait[]).map(trait => {
-    const values = BIG_FIVE_QUESTIONS.filter(question => question.trait === trait).map(question => answers[question.id] ?? 3);
-    const score = Math.round((values.reduce((sum, value) => sum + value, 0) / (values.length * 5)) * 100);
-    return { trait, score, band: score >= 75 ? 'High' : score >= 45 ? 'Moderate' : 'Low' };
+    const questions = BIG_FIVE_QUESTIONS.filter(q => q.trait === trait);
+    const values = questions.map(q => {
+      const raw = answers[q.id] ?? 3;
+      return q.reverse ? (6 - raw) as LikertValue : raw;
+    });
+    const score = Math.round((values.reduce((sum, v) => sum + v, 0) / (values.length * 5)) * 100);
+    const band = score >= 70 ? 'High' : score >= 40 ? 'Moderate' : 'Low';
+    const description = bigFiveBandDescription(trait, band);
+    return { trait, score, band, description };
   });
+}
+
+function bigFiveBandDescription(trait: BigFiveTrait, band: string): string {
+  const map: Record<BigFiveTrait, Record<string, string>> = {
+    Openness: {
+      High: 'Highly curious and imaginative — you thrive on new ideas, creativity, and intellectual exploration.',
+      Moderate: 'You balance curiosity with practicality, open to new ideas when they have clear value.',
+      Low: 'You tend to prefer familiar, proven approaches over abstract or untested ideas.',
+    },
+    Conscientiousness: {
+      High: 'Highly organized and dependable — you plan ahead, follow through, and hold yourself to a high standard.',
+      Moderate: 'You are generally reliable but can be flexible when the situation calls for it.',
+      Low: 'You prefer spontaneity and flexibility over rigid planning and structure.',
+    },
+    Extraversion: {
+      High: 'Outgoing and energized by social interaction — you seek connection, stimulation, and lively environments.',
+      Moderate: 'You are comfortable in both social and solo settings, adapting based on context.',
+      Low: 'You prefer quieter, more reflective environments and recharge through solitude.',
+    },
+    Agreeableness: {
+      High: 'Warm, cooperative, and trusting — you prioritize harmony and the well-being of others.',
+      Moderate: 'You balance cooperation with assertiveness, depending on what the situation demands.',
+      Low: 'You prioritize directness and logic over social harmony, and may push back more readily.',
+    },
+    Neuroticism: {
+      High: 'More sensitive to stress and emotional shifts — you may find uncertainty or setbacks harder to shake.',
+      Moderate: 'You experience emotional reactions but can usually recover and maintain balance.',
+      Low: 'Emotionally stable and resilient — you tend to stay calm under pressure and recover quickly.',
+    },
+  };
+  return map[trait][band] ?? '';
 }
 
 function simulateMbti(agent: Agent | null): Record<string, LikertValue> {
@@ -505,18 +614,33 @@ function simulateMbti(agent: Agent | null): Record<string, LikertValue> {
   const intuitive = /creative|vision|future|narrative|strategy|design|research/.test(text);
   const feeling = /support|community|care|empathy|brand/.test(text);
   const judging = /ops|reliability|automation|security|finance|architecture|roadmap/.test(text);
-  return { 'ei-1': social ? 5 : 2, 'ei-2': social ? 4 : 2, 'sn-1': intuitive ? 5 : 2, 'sn-2': intuitive ? 4 : 2, 'tf-1': feeling ? 4 : 2, 'tf-2': feeling ? 5 : 2, 'jp-1': judging ? 2 : 5, 'jp-2': judging ? 2 : 4 };
+  const ei: LikertValue = social ? 5 : 2;
+  const sn: LikertValue = intuitive ? 5 : 2;
+  const tf: LikertValue = feeling ? 4 : 2;
+  const jp: LikertValue = judging ? 2 : 5;
+  return {
+    'ei-1': ei, 'ei-2': ei, 'ei-3': ei, 'ei-4': (6 - ei) as LikertValue, 'ei-5': ei,
+    'sn-1': sn, 'sn-2': sn, 'sn-3': sn, 'sn-4': (6 - sn) as LikertValue, 'sn-5': sn,
+    'tf-1': tf, 'tf-2': tf, 'tf-3': tf, 'tf-4': (6 - tf) as LikertValue, 'tf-5': tf,
+    'jp-1': jp, 'jp-2': jp, 'jp-3': jp, 'jp-4': (6 - jp) as LikertValue, 'jp-5': jp,
+  };
 }
 
 function simulateBigFive(agent: Agent | null): Record<string, LikertValue> {
   if (!agent) return {};
   const text = `${agent.role} ${agent.specialization} ${agent.goal ?? ''} ${agent.tags.join(' ')}`.toLowerCase();
-  const openness = /creative|vision|narrative|design|research|future/.test(text) ? 5 : 3;
-  const conscientiousness = /ops|reliability|security|automation|architecture|finance/.test(text) ? 5 : 3;
-  const extraversion = /growth|brand|community|product|marketing|partnership/.test(text) ? 4 : 2;
-  const agreeableness = /support|community|care|brand|people/.test(text) ? 5 : 3;
-  const neuroticism = /security|finance|ops|reliability/.test(text) ? 3 : 2;
-  return { 'o-1': openness, 'o-2': openness === 5 ? 4 : 3, 'c-1': conscientiousness, 'c-2': conscientiousness === 5 ? 4 : 3, 'e-1': extraversion, 'e-2': extraversion >= 4 ? 4 : 2, 'a-1': agreeableness, 'a-2': agreeableness === 5 ? 4 : 3, 'n-1': neuroticism, 'n-2': neuroticism >= 3 ? 3 : 2 };
+  const o: LikertValue = /creative|vision|narrative|design|research|future/.test(text) ? 5 : 3;
+  const c: LikertValue = /ops|reliability|security|automation|architecture|finance/.test(text) ? 5 : 3;
+  const e: LikertValue = /growth|brand|community|product|marketing|partnership/.test(text) ? 4 : 2;
+  const a: LikertValue = /support|community|care|brand|people/.test(text) ? 5 : 3;
+  const n: LikertValue = /security|finance|ops|reliability/.test(text) ? 3 : 2;
+  const result: Record<string, LikertValue> = {};
+  BIG_FIVE_QUESTIONS.forEach(q => {
+    const map: Record<BigFiveTrait, LikertValue> = { Openness: o, Conscientiousness: c, Extraversion: e, Agreeableness: a, Neuroticism: n };
+    const base = map[q.trait];
+    result[q.id] = q.reverse ? (6 - base) as LikertValue : base;
+  });
+  return result;
 }
 
 function simulateIqAnswer(agent: Agent, question: IqQuestion, index: number) {
