@@ -1,0 +1,8 @@
+locator.waitFor: Error: strict mode violation: getByText('Universal Deploy') resolved to 2 elements:
+    1) <div class="px-3 py-1.5 rounded-lg text-xs truncate">Select a team and stage a universal deployment pa…</div> aka getByText('Select a team and stage a')
+    2) <div class="text-[11px] uppercase tracking-[0.24em]">Universal Deploy</div> aka getByText('Universal Deploy', { exact: true })
+
+Call log:
+[2m  - waiting for getByText('Universal Deploy') to be visible[22m
+
+    at run (/run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/run-s04-universal-deploy.mjs:85:46)

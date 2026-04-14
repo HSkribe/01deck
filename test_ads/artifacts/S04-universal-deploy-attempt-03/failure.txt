@@ -1,0 +1,2 @@
+Error: Expected at least 2 ready agent cards, found 0
+    at run (file:///run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/run-s04-universal-deploy.mjs:93:13)

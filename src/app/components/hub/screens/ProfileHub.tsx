@@ -17,6 +17,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
+import { useAuth } from '../../../context/AuthContext';
 import { achievements, userStats } from '../../../data/hubData';
 
 const API_KEY_STORAGE = '01deck:api-keys';
@@ -147,6 +148,7 @@ function Surface({
 
 export function ProfileHub() {
   const { currentTheme: t, userAvatarUrl, setUserAvatarUrl, setShowCreator } = useApp();
+  const { user } = useAuth();
   const [view, setView] = React.useState<ProfileView>('overview');
   const [apiKeys, setApiKeys] = React.useState<StoredApiKeys>(readStoredApiKeys);
   const [selectedProvider, setSelectedProvider] = React.useState<ProviderId>('openai');
@@ -155,7 +157,12 @@ export function ProfileHub() {
   const [saveNotice, setSaveNotice] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  const xpPct = Math.round((userStats.xp / userStats.xpToNext) * 100);
+  // Real user data from auth — fall back to hubData for non-auth fields
+  const currentXp = user?.xp ?? userStats.xp;
+  const currentLevel = user?.level ?? userStats.level;
+  const XP_PER_LEVEL = 500;
+  const xpIntoLevel = currentXp % XP_PER_LEVEL;
+  const xpPct = Math.round((xpIntoLevel / XP_PER_LEVEL) * 100);
   const earnedAch = achievements.filter(a => a.earned);
   const lockedAch = achievements.filter(a => !a.earned);
   const configuredProviders = providerOptions.filter(provider => apiKeys[provider.id]?.key);
@@ -250,17 +257,21 @@ export function ProfileHub() {
                   className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs"
                   style={{ background: '#a855f7', color: '#000', border: `2px solid ${t.bg}` }}
                 >
-                  {userStats.level}
+                  {currentLevel}
                 </div>
               </div>
 
               <div className="flex-1">
-                <h1 className="text-xl mb-1" style={{ color: t.text }}>Protocol Agent</h1>
-                <p className="text-xs mb-3" style={{ color: t.textMuted }}>{userStats.rank}</p>
+                <h1 className="text-xl mb-1" style={{ color: t.text }}>
+                  {user?.displayName ?? 'Protocol Agent'}
+                </h1>
+                <p className="text-xs mb-3" style={{ color: t.textMuted }}>
+                  {user ? `@${user.username}` : userStats.rank}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { icon: Flame, value: `${userStats.streak}d`, label: 'streak', color: '#f59e0b' },
-                    { icon: Zap, value: `${userStats.xp.toLocaleString()}`, label: 'XP', color: '#a855f7' },
+                    { icon: Zap, value: currentXp.toLocaleString(), label: 'XP', color: '#a855f7' },
                     { icon: Trophy, value: earnedAch.length, label: 'badges', color: '#d4af37' },
                   ].map(stat => (
                     <div
@@ -302,9 +313,9 @@ export function ProfileHub() {
 
           <div>
             <div className="flex items-center justify-between mb-2 text-xs">
-              <span style={{ color: t.textMuted }}>Level {userStats.level}</span>
-              <span style={{ color: '#a855f7' }}>{userStats.xp.toLocaleString()} / {userStats.xpToNext.toLocaleString()} XP</span>
-              <span style={{ color: t.textMuted }}>Level {userStats.level + 1}</span>
+              <span style={{ color: t.textMuted }}>Level {currentLevel}</span>
+              <span style={{ color: '#a855f7' }}>{xpIntoLevel.toLocaleString()} / {XP_PER_LEVEL.toLocaleString()} XP</span>
+              <span style={{ color: t.textMuted }}>Level {currentLevel + 1}</span>
             </div>
             <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
               <motion.div

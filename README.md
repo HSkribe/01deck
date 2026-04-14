@@ -95,9 +95,13 @@ pip install -e .[dev]
 
 Security env template:
 - [.env.example](/D:/code/working/01Deck/.env.example)
+- [.env.deck.example](/media/Ryan/PROJECTS/code/working/01Deck/.env.deck.example)
 
 Beta deployment checklist:
 - [BETA_DEPLOYMENT_CHECKLIST.md](/D:/code/working/01Deck/BETA_DEPLOYMENT_CHECKLIST.md)
+
+Google Cloud beta deploy:
+- [DEPLOY_GOOGLE_CLOUD.md](/media/Ryan/PROJECTS/code/working/01Deck/DEPLOY_GOOGLE_CLOUD.md)
 
 ## Product Profiles
 

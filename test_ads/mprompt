@@ -1,0 +1,78 @@
+# 01Deck MPrompt Implementation
+
+This file is now the implemented entry point for the `01Deck` testing-and-ad-extraction workflow.
+
+It converts the original generic prompt pack into a concrete `NEXUS-Micro` operating kit for:
+
+1. testing real `01Deck` flows with evidence,
+2. classifying which flows are actually marketable,
+3. extracting short-form ad scripts only from proven, visually clear outcomes.
+
+## Selected Agent Stack
+
+These are the agents selected from `agents/agency-agents-main` for `mprompt` orchestration:
+
+- `specialized/agents-orchestrator.md`
+- `project-management/project-manager-senior.md`
+- `design/design-ux-researcher.md`
+- `testing/testing-evidence-collector.md`
+- `testing/testing-reality-checker.md`
+- `testing/testing-test-results-analyzer.md`
+- `testing/testing-workflow-optimizer.md`
+- `marketing/marketing-growth-hacker.md`
+- `marketing/marketing-content-creator.md`
+- `design/design-visual-storyteller.md`
+- `marketing/marketing-social-media-strategist.md`
+- `support/support-executive-summary-generator.md`
+
+## Why This Roster
+
+- `Agents Orchestrator` runs the pipeline and enforces quality gates.
+- `Senior Project Manager` turns `01Deck` into a ranked scenario list.
+- `UX Researcher` keeps the flows beginner-readable and visually legible.
+- `Evidence Collector` captures recordings, screenshots, timestamps, and failures.
+- `Reality Checker` blocks weak or exaggerated ad candidates.
+- `Test Results Analyzer` separates QA success from marketing usefulness.
+- `Workflow Optimizer` keeps artifact bundles consistent and reruns clean.
+- `Growth Hacker`, `Content Creator`, `Visual Storyteller`, and `Social Media Strategist` only activate after a scenario is proven marketable.
+- `Executive Summary Generator` closes the sprint with a usable decision brief.
+
+## Package Layout
+
+- `mprompt-master-prompt.md`
+- `README.md`
+- `templates/scenario-plan-01deck.yaml`
+- `templates/artifact-bundle-template.md`
+- `templates/classification-template.md`
+- `templates/creative-extraction-template.md`
+- `templates/handoff-template.md`
+- `templates/run-log-template.md`
+- `artifacts/`
+- `logs/`
+- `reruns/`
+- `approved/`
+
+## Core Operating Rule
+
+Only flows that pass both of these bars move into ad creation:
+
+- the scenario completes successfully,
+- the value is visibly obvious on screen in a short time window.
+
+If a flow passes QA but looks slow, cluttered, confusing, or low-energy, it is `PASS_NOT_MARKETABLE`.
+
+## 01Deck-Specific Scope
+
+Start with the current, visually demonstrable surfaces:
+
+- `Universal Deploy`
+- `01FOUNDRY` dashboard, scorecard, benchmark, and lineage proof flows when seeded
+- `Learn` interactive assessments
+- `Learn` how-to guides
+- `Arcade` live-session entry points
+
+Avoid invented backend claims and avoid footage that depends on invisible system behavior.
+
+## Next Command
+
+Use [mprompt-master-prompt.md](/run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/mprompt-master-prompt.md) as the controller prompt and [templates/scenario-plan-01deck.yaml](/run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/templates/scenario-plan-01deck.yaml) as the first scenario seed list.

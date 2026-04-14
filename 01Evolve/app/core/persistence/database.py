@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.persistence.models import Base
+from app.core.runtime.paths import get_default_db_path
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / "01evolve.sqlite3"
+DEFAULT_DB_PATH = get_default_db_path()
 
 
 def get_engine(db_url: str | None = None):

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronRight, Compass, Gamepad2, Library, LucideIcon, Rocket, Sparkles, Trophy, UserCircle2 } from 'lucide-react';
 import { useApp, type WorkspaceSectionId } from '../../context/AppContext';
 import { AgentOptimizationPlugin } from '../../plugins/AgentOptimizationPlugin';
@@ -13,10 +13,12 @@ import { RiddleRace } from '../games/RiddleRace';
 import { TriviaQuizzes } from '../games/TriviaQuizzes';
 import { InteractiveAssessments } from '../learn/InteractiveAssessments';
 import { IS_FOUNDRY_PRODUCT } from '../../utils/productMode';
+import { UniversalDeploySection } from './UniversalDeploySection';
 
 const sectionMeta: Record<WorkspaceSectionId, { label: string; eyebrow: string; icon: LucideIcon; accent: string }> = {
   foundry: { label: '01FOUNDRY', eyebrow: 'Support optimization', icon: Compass, accent: '#7dd3fc' },
   deck: { label: 'Deck', eyebrow: 'Agent workspace', icon: Sparkles, accent: '#ffffff' },
+  deploy: { label: 'Deploy', eyebrow: 'Universal handoff', icon: Rocket, accent: '#22c55e' },
   arcade: { label: 'Arcade', eyebrow: 'Play with agents', icon: Gamepad2, accent: '#a855f7' },
   learn: { label: 'Learn', eyebrow: 'Grow with agents', icon: BookOpen, accent: '#22c55e' },
   create: { label: 'Create', eyebrow: 'Publish your own content', icon: Rocket, accent: '#f59e0b' },
@@ -34,6 +36,7 @@ export function WorkspaceSection() {
   const { workspaceSection } = useApp();
 
   if (workspaceSection === 'foundry') return IS_FOUNDRY_PRODUCT ? <AgentOptimizationPlugin /> : null;
+  if (workspaceSection === 'deploy') return <UniversalDeploySection />;
   if (workspaceSection === 'arcade') return <ArcadeSection />;
   if (workspaceSection === 'learn') return <LearnSection />;
   if (workspaceSection === 'create') return <CreateSection />;
@@ -112,6 +115,7 @@ function ArcadeSection() {
   const { currentTheme: t, chatAgent, setChatAgent } = useApp();
   const [selectedCategory, setSelectedCategory] = useState<'all' | typeof arcadeCategories[number]['id']>('all');
   const [selectedGameId, setSelectedGameId] = useState<string>(arcadeGames[0]?.id ?? '');
+  const liveSessionRef = useRef<HTMLDivElement | null>(null);
 
   const visibleGames = useMemo(() => (
     selectedCategory === 'all'
@@ -224,10 +228,22 @@ function ArcadeSection() {
               <div className="flex flex-wrap gap-3 mt-5">
                 <button
                   type="button"
+                  onClick={() => {
+                    if (selectedGame.implementedView) {
+                      liveSessionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                  disabled={!selectedGame.implementedView}
                   className="px-4 py-2 rounded-xl text-sm"
-                  style={{ background: t.accent, color: t.bg }}
+                  style={{
+                    background: selectedGame.implementedView ? t.accent : t.surface2,
+                    border: `1px solid ${selectedGame.implementedView ? t.accent : t.border}`,
+                    color: selectedGame.implementedView ? t.bg : t.textMuted,
+                    opacity: selectedGame.implementedView ? 1 : 0.75,
+                    cursor: selectedGame.implementedView ? 'pointer' : 'not-allowed',
+                  }}
                 >
-                  {selectedGame.implementedView ? 'Launch live session' : 'Mark for build'}
+                  {selectedGame.implementedView ? 'Jump to live session' : 'Preview only'}
                 </button>
                 <button
                   type="button"
@@ -244,6 +260,7 @@ function ArcadeSection() {
       </div>
 
       {selectedGame?.implementedView ? (
+        <div ref={liveSessionRef}>
         <Surface className="p-5 mt-6">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
@@ -261,6 +278,7 @@ function ArcadeSection() {
           {selectedGame.implementedView === 'riddle-race' ? <RiddleRace /> : null}
           {selectedGame.implementedView === 'trivia-quizzes' ? <TriviaQuizzes /> : null}
         </Surface>
+        </div>
       ) : null}
     </SectionScaffold>
   );
@@ -270,9 +288,17 @@ function LearnSection() {
   const { currentTheme: t, chatAgent } = useApp();
   const [selectedSection, setSelectedSection] = useState<LearnSectionId>('tests');
   const [selectedItemId, setSelectedItemId] = useState<string>(learnItems[0]?.id ?? '');
+  const interactiveAssessmentIds = useMemo(() => new Set(['mbti', 'big-five', 'iq-test']), []);
 
   const visibleItems = learnItems.filter(item => item.section === selectedSection);
-  const selectedItem = learnItems.find(item => item.id === selectedItemId) ?? visibleItems[0];
+  const selectedItem = visibleItems.find(item => item.id === selectedItemId) ?? visibleItems[0];
+
+  useEffect(() => {
+    if (visibleItems.length === 0) return;
+    if (!visibleItems.some(item => item.id === selectedItemId)) {
+      setSelectedItemId(visibleItems[0].id);
+    }
+  }, [selectedItemId, visibleItems]);
 
   return (
     <SectionScaffold
@@ -323,6 +349,7 @@ function LearnSection() {
                 <div className="flex flex-wrap gap-2 mt-4">
                   <MetaTag>{item.duration}</MetaTag>
                   <MetaTag>{item.difficulty}</MetaTag>
+                  {item.section === 'tests' ? <MetaTag>{interactiveAssessmentIds.has(item.id) ? 'Interactive now' : 'Preview only'}</MetaTag> : null}
                 </div>
               </button>
             ))}
@@ -346,11 +373,17 @@ function LearnSection() {
                 <DetailStat label="Difficulty" value={selectedItem.difficulty} />
               </div>
               <div className="mt-5">
-                <div className="text-xs uppercase tracking-[0.16em]" style={{ color: t.textMuted }}>Agent assist</div>
+                <div className="text-xs uppercase tracking-[0.16em]" style={{ color: t.textMuted }}>
+                  {selectedItem.section === 'tests' ? 'Assessment status' : 'Agent assist'}
+                </div>
                 <p className="text-sm mt-2" style={{ color: t.text, lineHeight: 1.7 }}>
-                  {chatAgent
-                    ? `${chatAgent.name} can act as coach, interpreter, or practice partner while you work through this item.`
-                    : 'Attach an agent in chat to turn this lesson into an interactive coaching flow.'}
+                  {selectedItem.section === 'tests'
+                    ? interactiveAssessmentIds.has(selectedItem.id)
+                      ? 'This test is interactive now and saves quick local history. Treat the result as a guided snapshot, not a formal certification.'
+                      : 'This test card is visible as a preview, but the interactive version is not wired in this build yet.'
+                    : chatAgent
+                      ? `${chatAgent.name} can act as coach, interpreter, or practice partner while you work through this item.`
+                      : 'Attach an agent in chat to turn this lesson into an interactive coaching flow.'}
                 </p>
               </div>
             </>
@@ -358,7 +391,7 @@ function LearnSection() {
         </Surface>
       </div>
 
-      {selectedSection === 'tests' && selectedItem && ['mbti', 'big-five', 'iq-test'].includes(selectedItem.id) ? (
+      {selectedSection === 'tests' && selectedItem && interactiveAssessmentIds.has(selectedItem.id) ? (
         <Surface className="p-5 mt-6">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
@@ -366,10 +399,25 @@ function LearnSection() {
               <div className="text-lg mt-1" style={{ color: t.text }}>{selectedItem.title}</div>
             </div>
             <div className="text-xs" style={{ color: t.textMuted }}>
-              Lightweight MVP flow wired into Learn
+              Quick snapshot with saved local history
             </div>
           </div>
           <InteractiveAssessments assessmentId={selectedItem.id as 'mbti' | 'big-five' | 'iq-test'} />
+        </Surface>
+      ) : selectedSection === 'tests' && selectedItem ? (
+        <Surface className="p-5 mt-6">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em]" style={{ color: t.textMuted }}>Preview status</div>
+              <div className="text-lg mt-1" style={{ color: t.text }}>{selectedItem.title}</div>
+            </div>
+            <div className="text-xs" style={{ color: t.textMuted }}>
+              Not interactive in this build
+            </div>
+          </div>
+          <p className="text-sm" style={{ color: t.textMuted, lineHeight: 1.7 }}>
+            This keeps the roadmap visible without pretending the assessment is complete. It stays marked as preview-only until the full interactive flow is built.
+          </p>
         </Surface>
       ) : null}
     </SectionScaffold>
@@ -445,10 +493,11 @@ function CreateSection() {
               <div className="flex flex-wrap gap-3 mt-5">
                 <button
                   type="button"
+                  onClick={() => setShowCreator(true)}
                   className="px-4 py-2 rounded-xl text-sm"
                   style={{ background: t.accent, color: t.bg }}
                 >
-                  Start this flow
+                  Open creator for this flow
                 </button>
                 <button
                   type="button"
@@ -512,9 +561,9 @@ function ProfileSection() {
         <Surface className="p-5">
           <div className="text-xs uppercase tracking-[0.2em]" style={{ color: t.textMuted }}>Planned metrics</div>
           <div className="space-y-3 mt-4">
-            <MetricRow label="Arcade streak" value="Coming soon" />
-            <MetricRow label="Learning progress" value="Coming soon" />
-            <MetricRow label="Published content" value="Coming soon" />
+            <MetricRow label="Agents available" value={String(allAgents.length)} />
+            <MetricRow label="Active mentor" value={chatAgent ? chatAgent.name : 'None attached'} />
+            <MetricRow label="Playable live games" value="6" />
           </div>
         </Surface>
       </div>

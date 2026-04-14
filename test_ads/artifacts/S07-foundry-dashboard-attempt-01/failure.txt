@@ -1,0 +1,5 @@
+locator.waitFor: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('heading', { name: 'Customer-support agent optimization' }) to be visible[22m
+
+    at run (/run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/run-s07-foundry-dashboard.mjs:81:86)

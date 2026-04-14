@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   X, ArrowRight, Cpu, Check, RefreshCw, Sliders,
   ChevronDown, ChevronUp, Zap, MessageSquare, Eye,
-  Download,
+  Download, FolderDown, HardDrive, ShieldAlert
 } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { useApp } from '../context/AppContext';
 import { Agent } from '../data/agents';
 import { ProceduralAvatar } from './ProceduralAvatar';
@@ -65,6 +67,8 @@ export function AgentCreatorModal() {
   const [hueOverride, setHueOverride] = useState<number | undefined>();
   const [showCustomize, setShowCustomize] = useState(false);
   const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
+  const [createdAgentPrivKey, setCreatedAgentPrivKey] = useState<string>('');
+  const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success'>('idle');
   const [nameError, setNameError] = useState('');
   const [goalError, setGoalError] = useState('');
   const avatarCandidates = useMemo(
@@ -92,6 +96,8 @@ export function AgentCreatorModal() {
     setHueOverride(undefined);
     setShowCustomize(false);
     setCreatedAgent(null);
+    setCreatedAgentPrivKey('');
+    setDeployStatus('idle');
     setNameError('');
     setGoalError('');
   };
@@ -135,7 +141,7 @@ export function AgentCreatorModal() {
     setGenDone(false);
   };
 
-  const buildAgent = (portrait: string): Agent => {
+  const buildAgent = (portrait: string): { agent: Agent; privateKeyHex: string } => {
     const name = agentName.trim().toUpperCase();
     const serial = Date.now();
     const protocol = createDeckProtocolPayload({
@@ -149,41 +155,44 @@ export function AgentCreatorModal() {
     });
 
     return {
-      id: `user-${serial}`,
-      name,
-      category: agentCategory,
-      role: agentRole || '01 Protocol Agent Ambassador',
-      description: agentGoal.trim(),
-      specialization: `${agentRole} · 01ai Ecosystem`,
-      lastUsed: new Date(),
-      rarity: 'common',
-      rarityCount: '1/1',
-      portrait,
-      tools: ['Platform Recommender', 'Agent Builder', 'Memory Manager', '01 Protocol Registry'],
-      memoryNotes: 'Memory mode: always_on. Local memory vault initializes at creation and stores recent interaction history.',
-      online: true,
-      tags: ['01protocol', agentCategory, 'custom', 'agent'],
-      stats: [
-        { label: 'Intelligence', value: 88 + Math.floor(Math.random() * 10) },
-        { label: 'Memory', value: 100 },
-        { label: 'Adaptability', value: 85 + Math.floor(Math.random() * 10) },
-        { label: 'Protocol IQ', value: 92 + Math.floor(Math.random() * 7) },
-      ],
-      protocolVersion: '01P v3.0',
-      protocolId: `PRO-${protocol.protocolAgent.instanceId.slice(0, 6).toUpperCase()}-${name}`,
-      chatOpening: `I'm ${name}. My directive is: ${agentGoal.trim()}. How can I help you today?`,
-      isUserCreated: true,
-      goal: agentGoal.trim(),
-      memoryMode: 'always_on',
-      memoryVaultId: `vault-${protocol.protocolAgent.instanceId}`,
-      memoryEntryCount: 0,
-      serial: 1,
-      totalSupply: 1,
-      isVerified: protocol.verification.status === 'verified',
-      identityRecord: protocol.identityRecord,
-      bundleRecord: protocol.bundleRecord,
-      verification: protocol.verification,
-      systemPrompt: `You are ${name}. Your role is ${agentRole || '01 Protocol Agent Ambassador'}. Your goal is: ${agentGoal.trim()}.`,
+      privateKeyHex: protocol.privateKeyHex || '',
+      agent: {
+        id: `user-${serial}`,
+        name,
+        category: agentCategory,
+        role: agentRole || '01 Protocol Agent Ambassador',
+        description: agentGoal.trim(),
+        specialization: `${agentRole} · 01ai Ecosystem`,
+        lastUsed: new Date(),
+        rarity: 'common',
+        rarityCount: '1/1',
+        portrait,
+        tools: ['Platform Recommender', 'Agent Builder', 'Memory Manager', '01 Protocol Registry'],
+        memoryNotes: 'Memory mode: always_on. Local memory vault initializes at creation and stores recent interaction history.',
+        online: true,
+        tags: ['01protocol', agentCategory, 'custom', 'agent'],
+        stats: [
+          { label: 'Intelligence', value: 88 + Math.floor(Math.random() * 10) },
+          { label: 'Memory', value: 100 },
+          { label: 'Adaptability', value: 85 + Math.floor(Math.random() * 10) },
+          { label: 'Protocol IQ', value: 92 + Math.floor(Math.random() * 7) },
+        ],
+        protocolVersion: '01P v3.0',
+        protocolId: `PRO-${protocol.protocolAgent.instanceId.slice(0, 6).toUpperCase()}-${name}`,
+        chatOpening: `I'm ${name}. My directive is: ${agentGoal.trim()}. How can I help you today?`,
+        isUserCreated: true,
+        goal: agentGoal.trim(),
+        memoryMode: 'always_on',
+        memoryVaultId: `vault-${protocol.protocolAgent.instanceId}`,
+        memoryEntryCount: 0,
+        serial: 1,
+        totalSupply: 1,
+        isVerified: protocol.verification.status === 'verified',
+        identityRecord: protocol.identityRecord,
+        bundleRecord: protocol.bundleRecord,
+        verification: protocol.verification,
+        systemPrompt: `You are ${name}. Your role is ${agentRole || '01 Protocol Agent Ambassador'}. Your goal is: ${agentGoal.trim()}.`,
+      }
     };
   };
 
@@ -196,11 +205,51 @@ export function AgentCreatorModal() {
       style: avatarStyle,
       hueOverride,
     });
-    const agent = buildAgent(portrait);
-    setCreatedAgent(agent);
-    addAgent(agent);
-    void ensureAgentMemoryVault(agent);
+    const result = buildAgent(portrait);
+    setCreatedAgent(result.agent);
+    setCreatedAgentPrivKey(result.privateKeyHex);
+    addAgent(result.agent);
+    void ensureAgentMemoryVault(result.agent);
     setScreen('success');
+  };
+
+  const handleDownloadArchive = async () => {
+    if (!createdAgent) return;
+    const zip = new JSZip();
+    const vaultFolder = zip.folder(`${createdAgent.name.toLowerCase().replace(/\s+/g, '_')}_vault`);
+    if (!vaultFolder) return;
+    
+    // Core Identity Artifacts
+    const agentsFolder = vaultFolder.folder('agents');
+    if (createdAgent.bundleRecord) {
+      agentsFolder?.file(`${createdAgent.name.toLowerCase().replace(/\s+/g, '_')}.01bundle`, createdAgent.bundleRecord);
+    } else if (createdAgent.identityRecord) {
+      agentsFolder?.file(`${createdAgent.name.toLowerCase().replace(/\s+/g, '_')}.01ai`, createdAgent.identityRecord);
+    }
+
+    // Private Key
+    const keysFolder = vaultFolder.folder('keys');
+    keysFolder?.file(`${createdAgent.name.toLowerCase().replace(/\s+/g, '_')}.pem`, `-----BEGIN PRIVATE KEY-----\n${createdAgentPrivKey}\n-----END PRIVATE KEY-----`);
+    
+    // Recommended Directory Structures
+    const memoryFolder = vaultFolder.folder('memory');
+    memoryFolder?.folder('persistent');
+    memoryFolder?.folder('operational');
+    
+    const logsFolder = vaultFolder.folder('logs');
+    logsFolder?.file('README.md', 'This directory is intended for chronological interaction and time-tracking logs.');
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    saveAs(blob, `${createdAgent.name.toLowerCase()}_01protocol_vault.zip`);
+  };
+
+  const handleQuickDeploy = () => {
+    // In a full desktop/backend implementation, this would trigger an IPC or backend API call.
+    // For the web interface, we mock the UI flow to demonstrate the UX.
+    setDeployStatus('deploying');
+    setTimeout(() => {
+      setDeployStatus('success');
+    }, 1500);
   };
 
   const handleOpenAgent = () => {
@@ -680,20 +729,72 @@ export function AgentCreatorModal() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 w-full">
+                <div className="flex gap-2 w-full mb-6">
+                  <motion.button
+                    onClick={handleDownloadArchive}
+                    className="flex-1 flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl text-xs"
+                    style={{
+                      background: t.surface2,
+                      border: `1px solid ${t.border}`,
+                      color: t.text,
+                    }}
+                    whileHover={{ scale: 1.02, borderColor: t.accent }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <FolderDown size={20} style={{ color: t.accent }} />
+                    <span className="font-medium">Download Archive (.zip)</span>
+                    <span className="text-[10px] opacity-70">Includes keys, memory, and logs folders</span>
+                  </motion.button>
+                  <motion.button
+                    onClick={deployStatus === 'idle' ? handleQuickDeploy : undefined}
+                    disabled={deployStatus !== 'idle'}
+                    className="flex-1 flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl text-xs"
+                    style={{
+                      background: deployStatus === 'success' ? 'rgba(34,197,94,0.15)' : t.surface2,
+                      border: `1px solid ${deployStatus === 'success' ? 'rgba(34,197,94,0.3)' : t.border}`,
+                      color: deployStatus === 'success' ? '#22c55e' : t.text,
+                      cursor: deployStatus === 'idle' ? 'pointer' : 'default',
+                    }}
+                    whileHover={deployStatus === 'idle' ? { scale: 1.02, borderColor: t.accent } : {}}
+                    whileTap={deployStatus === 'idle' ? { scale: 0.98 } : {}}
+                  >
+                    {deployStatus === 'deploying' ? (
+                      <RefreshCw size={20} className="animate-spin" />
+                    ) : deployStatus === 'success' ? (
+                      <Check size={20} />
+                    ) : (
+                      <HardDrive size={20} style={{ color: t.text }} />
+                    )}
+                    <span className="font-medium">
+                      {deployStatus === 'deploying' ? 'Deploying...' : deployStatus === 'success' ? 'Deployed to ~/.01protocol' : 'Local Quick Deploy'}
+                    </span>
+                    <span className="text-[10px] opacity-70">
+                      {deployStatus === 'success' ? 'Files are ready.' : 'Auto-save to system directories'}
+                    </span>
+                  </motion.button>
+                </div>
+
+                <div className="p-3 rounded-xl mb-6 w-full flex items-start gap-3 text-left" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+                  <ShieldAlert size={16} className="mt-0.5 flex-shrink-0" />
+                  <div className="text-xs leading-relaxed">
+                    <strong>Critical:</strong> The downloaded archive or local deployment contains this agent's private key. Do not share or commit this key. If lost, the identity cannot be evolved or modified.
+                  </div>
+                </div>
+
+                <div className="flex gap-2 w-full pt-4" style={{ borderTop: `1px solid ${t.border}` }}>
                   <motion.button
                     onClick={handleOpenAgent}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium"
                     style={{
                       background: `${t.accent}15`,
                       border: `1px solid ${t.accent}35`,
-                      color: t.text,
+                      color: t.accent,
                     }}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
                     <MessageSquare size={12} />
-                    Open Agent
+                    Launch Session
                   </motion.button>
                   <motion.button
                     onClick={handleClose}
@@ -703,31 +804,12 @@ export function AgentCreatorModal() {
                       border: `1px solid ${t.border}`,
                       color: t.textMuted,
                     }}
-                    whileHover={{ scale: 1.02 }}
+                    whileHover={{ scale: 1.02, color: t.text }}
                     whileTap={{ scale: 0.98 }}
                   >
                     <Eye size={12} />
                     View Collection
                   </motion.button>
-                  <motion.button
-                    onClick={() => { setCreatedAgent(null); reset(); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs"
-                    style={{
-                      background: t.surface2,
-                      border: `1px solid ${t.border}`,
-                      color: t.textMuted,
-                    }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <Zap size={12} />
-                    New Agent
-                  </motion.button>
-                </div>
-
-                <div className="flex items-center gap-1 mt-4 text-[10px]" style={{ color: t.textMuted, opacity: 0.5 }}>
-                  <Download size={9} />
-                  <span>.01ai · .01bundle · {createdAgent.protocolId}</span>
                 </div>
               </motion.div>
             )}

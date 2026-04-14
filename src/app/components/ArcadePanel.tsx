@@ -259,10 +259,13 @@ export function ArcadePanel() {
                           background: t.surface3,
                           border: `1px solid ${t.border}`,
                           color: t.textMuted,
+                          opacity: 0.65,
+                          cursor: 'not-allowed',
                         }}
-                        whileHover={{ color: t.text }}
+                        title="Community registry preview - not wired in this build"
+                        disabled
                       >
-                        Browse Registry →
+                        Registry Preview Only
                       </motion.button>
                     </div>
                   </motion.div>

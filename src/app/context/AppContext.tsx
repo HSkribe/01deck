@@ -6,7 +6,7 @@ import { DEFAULT_PAGE_CONTEXT, DEFAULT_WORKSPACE_SECTION } from '../utils/produc
 import { appendConversationMemory, ensureAgentMemoryVault, getAgentMemoryContext } from '../services/memoryVault';
 
 export type ThemeId = 'core' | 'midnight' | 'holo' | 'clean' | 'solar';
-export type WorkspaceSectionId = 'foundry' | 'deck' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
+export type WorkspaceSectionId = 'foundry' | 'deck' | 'deploy' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
 export type AppPluginId = '01foundry-agent-optimization' | '01evolve-experience';
 
 export interface ThemeConfig {
@@ -387,6 +387,8 @@ interface AppContextType {
   setShowCreator: (v: boolean) => void;
   showAgentImport: boolean;
   setShowAgentImport: (v: boolean) => void;
+  showCreateImport: boolean;
+  setShowCreateImport: (v: boolean) => void;
 
   // Maestro
   maestroEnabled: boolean;
@@ -522,6 +524,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(readStoredOnboardingState);
   const [showCreator, setShowCreator] = useState(false);
   const [showAgentImport, setShowAgentImport] = useState(false);
+  const [showCreateImport, setShowCreateImport] = useState(false);
   const [maestroEnabled, setMaestroEnabled] = useState(false);
   const [maestroOpen, setMaestroOpen] = useState(false);
   const [vstAgents, setVstAgents] = useState<Agent[]>([]);
@@ -988,6 +991,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setShowCreator,
         showAgentImport,
         setShowAgentImport,
+        showCreateImport,
+        setShowCreateImport,
         maestroEnabled,
         setMaestroEnabled,
         maestroOpen,

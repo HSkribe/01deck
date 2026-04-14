@@ -1,0 +1,5 @@
+locator.textContent: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('text=Terminal Command').locator('..').locator('pre')[22m
+
+    at run (/run/media/Ryan/01D6C62CA8BDCCC0/code/working/01Deck/test_ads/run-s04-universal-deploy.mjs:108:95)

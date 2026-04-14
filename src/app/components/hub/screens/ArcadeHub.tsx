@@ -9,6 +9,13 @@ import { useHub } from '../../../context/HubContext';
 import {
   games, arcadeCategories, ArcadeCategory, Game, LiveStatus,
 } from '../../../data/hubData';
+import { AgentChess } from '../../games/AgentChess';
+import { AgentChoice } from '../../games/AgentChoice';
+import { RiddleRace } from '../../games/RiddleRace';
+import { TriviaQuizzes } from '../../games/TriviaQuizzes';
+import { TwentyQuestionsRemix } from '../../games/TwentyQuestionsRemix';
+import { VoidPulse } from '../../games/VoidPulse';
+import { ProtocolMatch } from '../../games/ProtocolMatch';
 
 // ─── Status badge ─────────────────────────────────────────
 
@@ -188,7 +195,17 @@ function GameCard({ game, onSelect }: { game: Game; onSelect: (g: Game) => void 
 
 // ─── Game Detail Panel ─────────────────────────────────────
 
-function GameDetailPanel({ game, onClose }: { game: Game; onClose: () => void }) {
+function GameDetailPanel({
+  game,
+  onClose,
+  onLaunch,
+  onSelectRelated,
+}: {
+  game: Game;
+  onClose: () => void;
+  onLaunch: () => void;
+  onSelectRelated: (g: Game) => void;
+}) {
   const { currentTheme: t } = useApp();
   const cat = arcadeCategories.find(c => c.id === game.category);
   const color = cat?.color ?? '#a855f7';
@@ -290,6 +307,7 @@ function GameDetailPanel({ game, onClose }: { game: Game; onClose: () => void })
 
         {/* Play button */}
         <motion.button
+          onClick={onLaunch}
           className="w-full py-4 rounded-2xl text-sm flex items-center justify-center gap-3 mb-8"
           style={{
             background: `linear-gradient(135deg, ${color}30, ${color}15)`,
@@ -325,6 +343,7 @@ function GameDetailPanel({ game, onClose }: { game: Game; onClose: () => void })
                     key={r.id}
                     className="flex items-center gap-3 p-3 rounded-xl cursor-pointer"
                     style={{ background: t.surface1, border: `1px solid ${t.border}` }}
+                    onClick={() => onSelectRelated(r)}
                   >
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${rcat?.color ?? '#a855f7'}15` }}>
                       <span>{rcat?.icon ?? '🎮'}</span>
@@ -338,6 +357,79 @@ function GameDetailPanel({ game, onClose }: { game: Game; onClose: () => void })
                 );
               })}
             </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Game ID → Component map ──────────────────────────────
+
+const GAME_COMPONENT_MAP: Record<string, React.ComponentType> = {
+  'g-ac':  AgentChess,
+  'g-ach': AgentChoice,
+  'g003':  RiddleRace,
+  'g-tq':  TriviaQuizzes,
+  'g001':  TwentyQuestionsRemix,
+  'g-vp':  VoidPulse,
+  'g-pm':  ProtocolMatch,
+};
+
+// ─── Game Launch Modal ────────────────────────────────────
+
+function GameLaunchModal({ game, onClose }: { game: Game; onClose: () => void }) {
+  const { currentTheme: t } = useApp();
+  const cat = arcadeCategories.find(c => c.id === game.category);
+  const color = cat?.color ?? '#a855f7';
+  const GameComponent = GAME_COMPONENT_MAP[game.id] ?? null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 24 }}
+      transition={{ duration: 0.28, ease: [0.34, 1.05, 0.64, 1] }}
+      className="fixed inset-0 z-[250] flex flex-col"
+      style={{ background: t.bg }}
+    >
+      {/* Header bar */}
+      <div
+        className="flex items-center justify-between px-4 shrink-0"
+        style={{
+          height: 56,
+          borderBottom: `1px solid ${t.border}`,
+          background: t.surface1,
+        }}
+      >
+        <motion.button
+          onClick={onClose}
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: 'transparent', border: `1px solid ${t.border}`, color: t.text }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <ChevronLeft size={18} />
+        </motion.button>
+
+        <span className="text-sm font-medium truncate max-w-[55%] text-center" style={{ color }}>
+          {game.title}
+        </span>
+
+        <div className="w-9 h-9 flex items-center justify-center">
+          <div className="w-3 h-3 rounded-full" style={{ background: color }} />
+        </div>
+      </div>
+
+      {/* Game content area */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        {GameComponent ? (
+          <GameComponent />
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
+            <span style={{ fontSize: 72, opacity: 0.5 }}>{cat?.icon ?? '🎮'}</span>
+            <p className="text-base" style={{ color: t.text }}>Coming Soon</p>
+            <p className="text-sm" style={{ color: t.textMuted }}>{game.title} is not yet available to play.</p>
           </div>
         )}
       </div>
@@ -381,6 +473,17 @@ function CategoryHero({ category }: { category: typeof arcadeCategories[0] }) {
 export function ArcadeHub() {
   const { currentTheme: t } = useApp();
   const { arcadeCategory, setArcadeCategory, selectedGame, setSelectedGame } = useHub();
+  const [isLaunched, setIsLaunched] = useState(false);
+
+  const handleSelectGame = useCallback((game: Game) => {
+    setSelectedGame(game);
+    setIsLaunched(false);
+  }, [setSelectedGame]);
+
+  const handleCloseDetail = useCallback(() => {
+    setSelectedGame(null);
+    setIsLaunched(false);
+  }, [setSelectedGame]);
 
   const liveGames = games.filter(g => g.liveStatus === 'live' && (!arcadeCategory || g.category === arcadeCategory));
   const mvpGames = games.filter(g => g.liveStatus === 'mvp' && (!arcadeCategory || g.category === arcadeCategory));
@@ -479,7 +582,7 @@ export function ArcadeHub() {
               <AnimatePresence>
                 {liveGames.map(game => (
                   <motion.div key={game.id} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }}>
-                    <GameCard game={game} onSelect={setSelectedGame} />
+                    <GameCard game={game} onSelect={handleSelectGame} />
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -499,7 +602,7 @@ export function ArcadeHub() {
               <AnimatePresence>
                 {plannedGames.map(game => (
                   <motion.div key={game.id} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }}>
-                    <GameCard game={game} onSelect={setSelectedGame} />
+                    <GameCard game={game} onSelect={handleSelectGame} />
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -510,7 +613,24 @@ export function ArcadeHub() {
 
       {/* Game detail panel */}
       <AnimatePresence>
-        {selectedGame && <GameDetailPanel game={selectedGame} onClose={() => setSelectedGame(null)} />}
+        {selectedGame && (
+          <GameDetailPanel
+            game={selectedGame}
+            onClose={handleCloseDetail}
+            onLaunch={() => setIsLaunched(true)}
+            onSelectRelated={handleSelectGame}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Game launch modal */}
+      <AnimatePresence>
+        {isLaunched && selectedGame && (
+          <GameLaunchModal
+            game={selectedGame}
+            onClose={() => setIsLaunched(false)}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

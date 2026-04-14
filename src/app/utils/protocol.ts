@@ -6,6 +6,7 @@ export interface DeckProtocolPayload {
   protocolAgent: ProtocolAgentId;
   identityRecord: string;
   bundleRecord?: string;
+  privateKeyHex?: string;
   verification: NonNullable<Agent['verification']>;
 }
 
@@ -86,6 +87,7 @@ export function createDeckProtocolPayload(params: CreateDeckProtocolParams): Dec
     protocolAgent: created.agent,
     identityRecord,
     bundleRecord: created.bundle ? JSON.stringify(created.bundle, null, 2) : undefined,
+    privateKeyHex: created.privateKeyHex,
     verification: buildVerificationState(verificationResult, created.bundle ? 'bundle' : '01protocol'),
   };
 }

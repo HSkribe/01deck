@@ -1,13 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, Download, Link2, MessageSquare, Plus, ShieldCheck, Store, X } from 'lucide-react';
+import { CheckCircle2, Download, Link2, MessageSquare, Plus, ShieldCheck, Store, X, Globe, FileText, Mail, ExternalLink } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { parseDeckProtocolText, verifyDeckAgent } from '../utils/protocol';
 import { generateAvatarDataUrl } from '../utils/avatarUtils';
 
-type OpsTab = 'social' | 'verify' | 'messages' | 'board' | 'trade';
+type HubTab = 'social' | 'verify' | 'messages' | 'board' | 'trade' | 'links';
 
-export function OperationsHub() {
+const socialLinks = [
+  { icon: Globe, label: '01AI Website', href: 'https://01ai.ai', color: '#6384ff' },
+  { icon: FileText, label: '01AI Updates', href: 'https://01ai.ai', color: '#22c55e' },
+  { icon: Mail, label: 'Email Support', href: 'mailto:info@01ai.ai', color: '#94a3b8' },
+];
+
+export function Hub() {
   const {
     currentTheme: t,
     isOpsOpen,
@@ -23,7 +29,7 @@ export function OperationsHub() {
     tradeProposals,
     createTradeProposal,
   } = useApp();
-  const [tab, setTab] = useState<OpsTab>('social');
+  const [tab, setTab] = useState<HubTab>('social');
   const [selectedAgentId, setSelectedAgentId] = useState(allAgents[0]?.id ?? '');
   const [verifyResult, setVerifyResult] = useState<ReturnType<typeof verifyDeckAgent> | null>(null);
   const [importPayload, setImportPayload] = useState('');
@@ -118,12 +124,13 @@ export function OperationsHub() {
     URL.revokeObjectURL(url);
   };
 
-  const tabs: { id: OpsTab; label: string; icon: React.ElementType }[] = [
+  const tabs: { id: HubTab; label: string; icon: React.ElementType }[] = [
     { id: 'social', label: 'Social', icon: Link2 },
     { id: 'verify', label: 'Verify', icon: ShieldCheck },
     { id: 'messages', label: 'Messages', icon: MessageSquare },
     { id: 'board', label: 'Board', icon: CheckCircle2 },
     { id: 'trade', label: 'Trade', icon: Store },
+    { id: 'links', label: 'Links', icon: ExternalLink },
   ];
 
   return (
@@ -151,7 +158,7 @@ export function OperationsHub() {
             transition={{ duration: 0.2 }}
           >
             <div className="flex items-center justify-between px-4 h-12" style={{ borderBottom: `1px solid ${t.border}` }}>
-              <div className="text-sm" style={{ color: t.text }}>Operations Hub</div>
+              <div className="text-sm" style={{ color: t.text }}>Deck Hub</div>
               <button
                 onClick={() => setIsOpsOpen(false)}
                 className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -516,6 +523,38 @@ export function OperationsHub() {
                             {trade.offeredCredits} credits · {trade.status}
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tab === 'links' && (
+                  <div>
+                    <h3 className="text-sm mb-3" style={{ color: t.text }}>Official Links</h3>
+                    <div className="grid grid-cols-1 gap-2">
+                      {socialLinks.map(s => (
+                        <a
+                          key={s.label}
+                          href={s.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between p-4 rounded-xl transition-all"
+                          style={{ background: t.surface1, border: `1px solid ${t.border}` }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLElement).style.borderColor = s.color;
+                            (e.currentTarget as HTMLElement).style.background = `${s.color}08`;
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLElement).style.borderColor = t.border;
+                            (e.currentTarget as HTMLElement).style.background = t.surface1;
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <s.icon size={18} style={{ color: s.color }} />
+                            <span className="text-sm" style={{ color: t.text }}>{s.label}</span>
+                          </div>
+                          <ExternalLink size={14} style={{ color: t.textMuted }} />
+                        </a>
                       ))}
                     </div>
                   </div>

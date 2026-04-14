@@ -272,6 +272,9 @@ class AgentCreate(BaseModel):
     runtime_config: RuntimeConfig
     metadata: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
+    # 01Protocol identity — signed identity record and optional bundle record from the frontend SDK
+    identity_record: str | None = None
+    bundle_record: str | None = None
 
     @model_validator(mode="after")
     def validate_prompt(self) -> "AgentCreate":

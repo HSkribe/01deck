@@ -25,6 +25,8 @@ class AgentRecord(Base):
     model_provider: Mapped[str] = mapped_column(String(128))
     system_prompt_template: Mapped[str] = mapped_column(Text())
     metadata_json: Mapped[str] = mapped_column(Text(), default="{}")
+    identity_record: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    bundle_record: Mapped[str | None] = mapped_column(Text(), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

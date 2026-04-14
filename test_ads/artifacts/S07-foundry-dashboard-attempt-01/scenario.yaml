@@ -1,0 +1,10 @@
+{
+  "scenario_id": "S07",
+  "scenario_name": "Foundry dashboard shows measurable support-optimization value",
+  "attempt": 1,
+  "status": "failed",
+  "persona": "Operations lead",
+  "qa_priority": "High",
+  "ad_potential": "High",
+  "record_screen": true
+}

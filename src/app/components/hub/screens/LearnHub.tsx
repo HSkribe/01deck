@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Clock, Star, Users, BookOpen, CheckCircle2, Lock, Play,
@@ -381,14 +381,218 @@ function CourseDetail({ course, onClose }: { course: Course; onClose: () => void
 
 // ─── HOW-TO CARD ──────────────────────────────────────────
 
-function HowToCard({ item }: { item: HowTo }) {
+type HowToGuideContent = {
+  goal: string;
+  outcome: string;
+  steps: string[];
+  checklist: string[];
+  deliverables: string[];
+  pitfalls: string[];
+};
+
+const HOWTO_GUIDES: Record<string, HowToGuideContent> = {
+  h001: {
+    goal: 'Create, configure, and launch a first useful agent with a clear role and portable identity.',
+    outcome: 'You finish with a named agent, a defined mission, a chosen memory mode, and a first deployment path.',
+    steps: [
+      'Choose one job-to-be-done, not a vague personality. Name the role in plain language.',
+      'Write a one-sentence mission that explains what the agent should reliably help with.',
+      'Decide memory mode: session-only for experimentation, always-on for ongoing workflows.',
+      'Pick only the tools the agent truly needs for the first version.',
+      'Create the agent, test one real task, then tighten the prompt instead of adding complexity.',
+    ],
+    checklist: [
+      'Name, role, and goal are concrete',
+      'Memory mode matches actual usage',
+      'At least one real test task was completed',
+      'The first version is portable or exportable',
+    ],
+    deliverables: ['First agent identity', 'Starter prompt', 'One successful test task'],
+    pitfalls: ['Overloading the agent with too many tools', 'Using personality instead of mission', 'Skipping the first real task test'],
+  },
+  'h-aan': {
+    goal: 'Run an AI Arcade Night that feels organized, social, and replayable rather than chaotic.',
+    outcome: 'You finish with a curated game lineup, a host plan, a scoring sheet, and a closing recap format.',
+    steps: [
+      'Pick a time box and audience size first, then choose 3 to 5 games that fit it.',
+      'Assign a host agent and decide whether it acts as announcer, judge, or commentator.',
+      'Warm up with an easy game, place the highest-energy challenge in the middle, and end with a social closer.',
+      'Prepare a visible scoring sheet, tie-break rule, and small rewards for momentum.',
+      'Close with a replay summary: best moment, top score, and what to change next time.',
+    ],
+    checklist: [
+      'Game order is set',
+      'Host and scoring roles are clear',
+      'Tie-breaks are defined',
+      'Wrap-up summary format exists',
+    ],
+    deliverables: ['Event run-of-show', 'Game playlist', 'Scoreboard template'],
+    pitfalls: ['Too many games for the time window', 'No tie-break rule', 'No warm-up round for new players'],
+  },
+  'h-dlt': {
+    goal: 'Design a learning track that sequences tests, classes, and guides into one useful progression.',
+    outcome: 'You finish with a track structure, pacing model, checkpoints, and a clear learner outcome.',
+    steps: [
+      'Define the learner outcome in one sentence before choosing any content.',
+      'Start with a diagnostic or quick snapshot to establish the baseline.',
+      'Sequence one class for concept building, then one how-to for practical application.',
+      'Add a checkpoint after each major step so learners can reflect or demonstrate progress.',
+      'End with a final synthesis task and next-step recommendation.',
+    ],
+    checklist: [
+      'Outcome is explicit',
+      'Each item has a reason to exist',
+      'Checkpoints are built in',
+      'The final step proves something useful',
+    ],
+    deliverables: ['Track outline', 'Checkpoint plan', 'Final outcome rubric'],
+    pitfalls: ['Stacking content without progression', 'Too many diagnostics', 'No final demonstration of learning'],
+  },
+  h002: {
+    goal: 'Build an agent memory system that is useful, selective, and safe to maintain.',
+    outcome: 'You finish with a memory model covering what to save, what to summarize, and what to forget.',
+    steps: [
+      'Separate short-lived session context from durable project memory.',
+      'Define memory types such as decisions, preferences, summaries, and recurring tasks.',
+      'Add rules for when memory is appended, summarized, or ignored.',
+      'Protect against noisy or stale memory by pruning aggressively.',
+      'Test retrieval on a real follow-up task and refine recall rules.',
+    ],
+    checklist: [
+      'Session and persistent memory are separated',
+      'Memory write rules exist',
+      'Noisy data is filtered',
+      'A retrieval test passed',
+    ],
+    deliverables: ['Memory model', 'Write rules', 'Retrieval test notes'],
+    pitfalls: ['Saving everything', 'Never pruning stale memory', 'Mixing facts with temporary chat noise'],
+  },
+  h003: {
+    goal: 'Set up an engineering-focused agent that can help with real coding work inside your workflow.',
+    outcome: 'You finish with an agent configured for code tasks, a safe working scope, and a first successful dev loop.',
+    steps: [
+      'Pick the code use case first: review, implementation, debugging, or scaffolding.',
+      'Constrain the working directory, tool access, and expected output format.',
+      'Define the acceptance criteria the agent must satisfy before it is considered successful.',
+      'Run one small real task, then inspect the diff or output before scaling up.',
+      'Document the prompts and guardrails that worked so the setup is repeatable.',
+    ],
+    checklist: [
+      'Use case is specific',
+      'Scope and tool access are constrained',
+      'Acceptance criteria are written down',
+      'One real code task was completed and reviewed',
+    ],
+    deliverables: ['Configured coding agent', 'Prompt template', 'Reviewed first task'],
+    pitfalls: ['Giving repo-wide scope too early', 'No acceptance criteria', 'Treating the first output as final without review'],
+  },
+  h004: {
+    goal: 'Use AI agents to turn a quick competitive scan into a short useful brief.',
+    outcome: 'You finish with a one-page competitive snapshot, key insights, and next-step actions.',
+    steps: [
+      'List the competitors and one research question per competitor.',
+      'Use one agent to collect signals and another to synthesize them.',
+      'Capture only the most decision-relevant differences: audience, positioning, pricing, and product signals.',
+      'Reduce the output to a short brief with 3 to 5 meaningful takeaways.',
+      'End with action recommendations rather than just observations.',
+    ],
+    checklist: [
+      'Competitor list is bounded',
+      'Signals are sourced consistently',
+      'Insights are synthesized, not dumped',
+      'Actions are attached to findings',
+    ],
+    deliverables: ['Competitive brief', 'Insight summary', 'Action list'],
+    pitfalls: ['Collecting too much raw data', 'No comparison framework', 'Stopping at notes instead of recommendations'],
+  },
+  h005: {
+    goal: 'Automate a weekly reporting loop that saves time and still produces readable output.',
+    outcome: 'You finish with a repeatable reporting input set, summary format, and escalation rules.',
+    steps: [
+      'List the exact sources and metrics required every week.',
+      'Normalize the reporting structure so every report uses the same sections.',
+      'Add trend callouts, anomalies, and a short executive summary rather than raw numbers alone.',
+      'Decide what gets automated fully and what still requires human review.',
+      'Test the workflow on one recent reporting cycle and refine the prompt or template.',
+    ],
+    checklist: [
+      'Source list is fixed',
+      'Report structure is standardized',
+      'Executive summary exists',
+      'Review rules are clear',
+    ],
+    deliverables: ['Weekly report template', 'Source map', 'Automation rules'],
+    pitfalls: ['Automating raw output without summarization', 'Changing report structure each week', 'No escalation rule for anomalies'],
+  },
+  h006: {
+    goal: 'Export an agent as a portable `.01bundle` that can be moved and reused cleanly.',
+    outcome: 'You finish with a bundle-ready agent, bundled memory, and a validation step before sharing.',
+    steps: [
+      'Confirm the agent identity is complete and the memory you want included is intentional.',
+      'Package identity and memory together into one portable bundle.',
+      'Verify the exported file before distributing it.',
+      'Label the bundle by purpose so other people know what it is for.',
+      'Test import on the destination workflow before treating it as finished.',
+    ],
+    checklist: [
+      'Identity is complete',
+      'Memory inclusion is intentional',
+      'Bundle verifies cleanly',
+      'Import was tested once',
+    ],
+    deliverables: ['Verified `.01bundle` file', 'Bundle purpose label', 'Import verification note'],
+    pitfalls: ['Exporting stale memory', 'Skipping verification', 'Sharing bundles without naming the intended use'],
+  },
+  h007: {
+    goal: 'Build a first-pass financial model with an AI partner without losing rigor.',
+    outcome: 'You finish with assumptions, scenarios, outputs, and a model review checklist.',
+    steps: [
+      'Start with the structure: drivers, assumptions, outputs, and scenarios.',
+      'Use the AI to draft formulas and layouts, but verify every major assumption yourself.',
+      'Create best, base, and downside scenarios before presenting any conclusion.',
+      'Write a short commentary that explains what moves the model most.',
+      'Review the model for sanity, circular logic, and obvious assumption errors.',
+    ],
+    checklist: [
+      'Assumptions are visible',
+      'Scenarios exist',
+      'Major outputs are explained',
+      'A review pass was completed',
+    ],
+    deliverables: ['Model structure', 'Scenario table', 'Decision commentary'],
+    pitfalls: ['Treating generated assumptions as fact', 'One-scenario thinking', 'No sanity check before sharing'],
+  },
+  h008: {
+    goal: 'Set up a moderation agent that helps without becoming a black box.',
+    outcome: 'You finish with moderation rules, escalation thresholds, and reporting expectations.',
+    steps: [
+      'Write the moderation policy in plain language before configuring the agent.',
+      'Separate auto-handle events from escalate-to-human events.',
+      'Define what must be logged for every intervention.',
+      'Add a recurring sentiment or incident summary so moderation improves over time.',
+      'Test the setup with a small set of realistic cases before wider rollout.',
+    ],
+    checklist: [
+      'Policy is explicit',
+      'Escalation thresholds are defined',
+      'Logging is required',
+      'A trial run was completed',
+    ],
+    deliverables: ['Moderation policy', 'Escalation matrix', 'Trial-case review'],
+    pitfalls: ['No escalation rules', 'No logging', 'Deploying without test cases'],
+  },
+};
+
+function HowToCard({ item, onSelect }: { item: HowTo; onSelect: (item: HowTo) => void }) {
   const { currentTheme: t } = useApp();
   const color = HOWTO_COLOR;
   const formatIcon: Record<string, string> = { video: '▶', walkthrough: '→', guide: '📋', tutorial: '⚡' };
   const formatColor: Record<string, string> = { video: '#ef4444', walkthrough: '#a855f7', guide: HOWTO_COLOR, tutorial: '#06b6d4' };
 
   return (
-    <motion.div
+    <motion.button
+      type="button"
+      onClick={() => onSelect(item)}
       className="flex items-center gap-4 p-4 rounded-xl cursor-pointer"
       style={{ background: t.surface2, border: `1px solid ${t.border}` }}
       whileHover={{ borderColor: color + '40', x: 3, boxShadow: `0 4px 20px ${color}10` }}
@@ -419,7 +623,122 @@ function HowToCard({ item }: { item: HowTo }) {
         <span className="text-[10px] capitalize px-2 py-0.5 rounded" style={{ background: `${formatColor[item.format]}15`, color: formatColor[item.format] }}>
           {item.format}
         </span>
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: HOWTO_COLOR }}>
+          Open Guide
+        </span>
         <ChevronRight size={14} style={{ color: t.textMuted }} />
+      </div>
+    </motion.button>
+  );
+}
+
+function HowToDetail({ item, onClose }: { item: HowTo; onClose: () => void }) {
+  const { currentTheme: t } = useApp();
+  const content = HOWTO_GUIDES[item.id] ?? {
+    goal: item.description,
+    outcome: 'You finish with a clear first version of this workflow and a short review of what to improve next.',
+    steps: [
+      'Review the guide description and define the exact result you want.',
+      'Set up the smallest working version first.',
+      'Run one realistic trial from start to finish.',
+      'Capture the result and note what needs refinement.',
+    ],
+    checklist: ['Goal is clear', 'A first pass was completed', 'One trial was reviewed'],
+    deliverables: ['First working draft', 'Review notes'],
+    pitfalls: ['Skipping the trial run', 'Treating the first draft as final'],
+  };
+
+  return (
+    <motion.div
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      transition={{ duration: 0.35, ease: [0.34, 1.05, 0.64, 1] }}
+      className="absolute inset-0 overflow-y-auto z-20"
+      style={{ background: t.bg }}
+    >
+      <div
+        className="px-6 pt-6 pb-8"
+        style={{ background: `linear-gradient(135deg, ${HOWTO_COLOR}18, ${HOWTO_COLOR}05)`, borderBottom: `1px solid ${t.border}` }}
+      >
+        <button onClick={onClose} className="flex items-center gap-2 mb-4 text-xs" style={{ color: t.textMuted }}>
+          <ArrowLeft size={14} /> Back to How-To
+        </button>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <StatusBadge status={item.liveStatus} />
+              <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider" style={{ background: `${HOWTO_COLOR}18`, color: HOWTO_COLOR, border: `1px solid ${HOWTO_COLOR}30` }}>
+                {item.category}
+              </span>
+            </div>
+            <h1 className="text-xl" style={{ color: t.text }}>{item.title}</h1>
+            <p className="text-xs mt-2 max-w-3xl" style={{ color: t.textMuted, lineHeight: 1.7 }}>{item.description}</p>
+          </div>
+          <div className="flex items-center gap-3 text-[10px]" style={{ color: t.textMuted }}>
+            <span>{item.duration}</span>
+            <DifficultyDot level={item.difficulty} />
+          </div>
+        </div>
+      </div>
+
+      <div className="px-6 py-6 space-y-6">
+        <div className="rounded-2xl p-5" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+          <div className="text-xs uppercase tracking-[0.18em]" style={{ color: t.textMuted }}>Goal</div>
+          <div className="text-sm mt-2" style={{ color: t.text }}>{content.goal}</div>
+          <div className="text-xs uppercase tracking-[0.18em] mt-5" style={{ color: t.textMuted }}>Outcome</div>
+          <div className="text-sm mt-2" style={{ color: t.text }}>{content.outcome}</div>
+        </div>
+
+        <div className="rounded-2xl p-5" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+          <div className="text-xs uppercase tracking-[0.18em] mb-4" style={{ color: t.textMuted }}>Step-by-step</div>
+          <div className="space-y-3">
+            {content.steps.map((step, index) => (
+              <div key={step} className="flex items-start gap-3 rounded-xl p-4" style={{ background: t.surface2, border: `1px solid ${t.border}` }}>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0" style={{ background: `${HOWTO_COLOR}18`, color: HOWTO_COLOR }}>
+                  {index + 1}
+                </div>
+                <div className="text-sm" style={{ color: t.text, lineHeight: 1.7 }}>{step}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl p-5" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+            <div className="text-xs uppercase tracking-[0.18em] mb-3" style={{ color: t.textMuted }}>Checklist</div>
+            <div className="space-y-2">
+              {content.checklist.map(itemText => (
+                <div key={itemText} className="flex items-start gap-2 text-sm" style={{ color: t.text }}>
+                  <CheckCircle2 size={14} style={{ color: HOWTO_COLOR, marginTop: 2, flexShrink: 0 }} />
+                  <span>{itemText}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-5" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+            <div className="text-xs uppercase tracking-[0.18em] mb-3" style={{ color: t.textMuted }}>Deliverables</div>
+            <div className="space-y-2">
+              {content.deliverables.map(itemText => (
+                <div key={itemText} className="text-sm rounded-xl px-3 py-2" style={{ background: t.surface2, color: t.text, border: `1px solid ${t.border}` }}>
+                  {itemText}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-5" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+            <div className="text-xs uppercase tracking-[0.18em] mb-3" style={{ color: t.textMuted }}>Common Pitfalls</div>
+            <div className="space-y-2">
+              {content.pitfalls.map(itemText => (
+                <div key={itemText} className="text-sm" style={{ color: t.textMuted, lineHeight: 1.7 }}>
+                  {itemText}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </motion.div>
   );
@@ -499,6 +818,9 @@ export function LearnHub() {
   const { learnTab, setLearnTab, selectedCourse, setSelectedCourse } = useHub();
   const [searchQ, setSearchQ] = useState('');
   const [selectedTest, setSelectedTest] = useState<LearnTest | null>(null);
+  const [selectedHowTo, setSelectedHowTo] = useState<HowTo | null>(null);
+  const [courseCategoryFilter, setCourseCategoryFilter] = useState('All');
+  const [howToFormatFilter, setHowToFormatFilter] = useState('All');
 
   const activeTab = TAB_CONFIG.find(tb => tb.id === learnTab)!;
 
@@ -506,11 +828,20 @@ export function LearnHub() {
     !searchQ || test.title.toLowerCase().includes(searchQ.toLowerCase()) || test.tags.some(tag => tag.includes(searchQ.toLowerCase()))
   );
   const filteredCourses = courses.filter(c =>
-    !searchQ || c.title.toLowerCase().includes(searchQ.toLowerCase())
+    (!searchQ || c.title.toLowerCase().includes(searchQ.toLowerCase())) &&
+    (courseCategoryFilter === 'All' || c.category === courseCategoryFilter)
   );
   const filteredHowTos = howTos.filter(h =>
-    !searchQ || h.title.toLowerCase().includes(searchQ.toLowerCase())
+    (!searchQ || h.title.toLowerCase().includes(searchQ.toLowerCase())) &&
+    (howToFormatFilter === 'All' || h.format.toLowerCase() === howToFormatFilter.toLowerCase())
   );
+  const featuredHowTo = filteredHowTos.find(h => h.featured) ?? null;
+
+  useEffect(() => {
+    setSelectedTest(null);
+    setSelectedHowTo(null);
+    setSelectedCourse(null);
+  }, [learnTab, setSelectedCourse]);
 
   return (
     <div className="relative h-full overflow-hidden">
@@ -664,7 +995,8 @@ export function LearnHub() {
                 <div className="flex items-center gap-2">
                   {['All', 'AI & Tech', 'Creative', 'Business', 'Data'].map(f => (
                     <button key={f} className="text-[10px] px-2 py-1 rounded-lg"
-                      style={{ background: f === 'All' ? `${CLASS_COLOR}18` : t.surface2, border: `1px solid ${f === 'All' ? CLASS_COLOR + '40' : t.border}`, color: f === 'All' ? CLASS_COLOR : t.textMuted }}>
+                      onClick={() => setCourseCategoryFilter(f)}
+                      style={{ background: f === courseCategoryFilter ? `${CLASS_COLOR}18` : t.surface2, border: `1px solid ${f === courseCategoryFilter ? CLASS_COLOR + '40' : t.border}`, color: f === courseCategoryFilter ? CLASS_COLOR : t.textMuted }}>
                       {f}
                     </button>
                   ))}
@@ -687,30 +1019,43 @@ export function LearnHub() {
                 <div className="flex gap-2">
                   {['All', 'Video', 'Walkthrough', 'Guide'].map(f => (
                     <button key={f} className="text-[10px] px-2 py-1 rounded-lg"
-                      style={{ background: t.surface2, border: `1px solid ${t.border}`, color: t.textMuted }}>
+                      onClick={() => setHowToFormatFilter(f)}
+                      style={{ background: f === howToFormatFilter ? `${HOWTO_COLOR}18` : t.surface2, border: `1px solid ${f === howToFormatFilter ? HOWTO_COLOR + '40' : t.border}`, color: f === howToFormatFilter ? HOWTO_COLOR : t.textMuted }}>
                       {f}
                     </button>
                   ))}
                 </div>
               </div>
+              <div className="rounded-2xl mb-4 p-4" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>
+                <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: HOWTO_COLOR }}>Start Here</div>
+                <div className="text-sm" style={{ color: t.text }}>Pick one guide, finish the checklist, then move to the next workflow.</div>
+              </div>
               {/* Featured */}
-              {howTos.filter(h => h.featured).slice(0, 1).map(h => (
-                <div key={h.id} className="relative rounded-2xl overflow-hidden mb-4 p-5 cursor-pointer"
+              {featuredHowTo && (
+                <motion.button
+                  type="button"
+                  onClick={() => setSelectedHowTo(featuredHowTo)}
+                  className="relative rounded-2xl overflow-hidden mb-4 p-5 cursor-pointer w-full text-left"
                   style={{ background: `linear-gradient(135deg, ${HOWTO_COLOR}18, ${HOWTO_COLOR}05)`, border: `1px solid ${HOWTO_COLOR}30` }}>
+                  whileHover={{ scale: 1.01, boxShadow: `0 8px 24px ${HOWTO_COLOR}12` }}
+                  whileTap={{ scale: 0.99 }}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider" style={{ color: HOWTO_COLOR }}>Featured Guide</span>
                   </div>
-                  <h3 className="text-sm mb-1" style={{ color: t.text }}>{h.title}</h3>
-                  <p className="text-xs mb-3" style={{ color: t.textMuted }}>{h.description}</p>
+                  <h3 className="text-sm mb-1" style={{ color: t.text }}>{featuredHowTo.title}</h3>
+                  <p className="text-xs mb-3" style={{ color: t.textMuted }}>{featuredHowTo.description}</p>
                   <div className="flex items-center gap-3 text-[10px]" style={{ color: t.textMuted }}>
-                    <span>{h.format}</span>
-                    <span className="flex items-center gap-0.5"><Clock size={9} />{h.duration}</span>
-                    <span>{(h.views / 1000).toFixed(0)}k views</span>
+                    <span>{featuredHowTo.format}</span>
+                    <span className="flex items-center gap-0.5"><Clock size={9} />{featuredHowTo.duration}</span>
+                    <span>{(featuredHowTo.views / 1000).toFixed(0)}k views</span>
+                    <span style={{ color: HOWTO_COLOR }}>Open guide</span>
                   </div>
-                </div>
-              ))}
+                </motion.button>
+              )}
               <div className="space-y-2">
-                {filteredHowTos.map(h => <HowToCard key={h.id} item={h} />)}
+                {filteredHowTos.map(h => (
+                  <HowToCard key={h.id} item={h} onSelect={setSelectedHowTo} />
+                ))}
               </div>
             </motion.div>
           )}
@@ -724,6 +1069,9 @@ export function LearnHub() {
         )}
         {selectedTest && (
           <TestDetail test={selectedTest} onClose={() => setSelectedTest(null)} />
+        )}
+        {selectedHowTo && (
+          <HowToDetail item={selectedHowTo} onClose={() => setSelectedHowTo(null)} />
         )}
       </AnimatePresence>
     </div>

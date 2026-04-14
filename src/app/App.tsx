@@ -13,14 +13,24 @@ import { OnboardingFlow } from './components/OnboardingFlow';
 import { AgentCreatorModal } from './components/AgentCreatorModal';
 import { AgentImportFlow } from './components/AgentImportFlow';
 import { MaestroPanel } from './components/MaestroPanel';
-import { OperationsHub } from './components/OperationsHub';
+import { Hub } from './components/Hub';
+import { CreateImportModal } from './components/CreateImportModal';
 import { WorkspaceSection } from './components/workspace/WorkspaceSection';
 import { HubApp } from './components/hub/HubApp';
 import { EvolutionExperiencePlugin } from './plugins/01evolve/EvolutionExperiencePlugin';
 import { IS_DECK_PRODUCT, SERIOUS_PRODUCT_MODE } from './utils/productMode';
 
 function AppContent() {
-  const { currentTheme: t, isOnline, workspaceSection, showHub, setShowHub, hubInitialView, maestroEnabled } = useApp();
+  const { 
+    currentTheme: t, 
+    isOnline, 
+    workspaceSection, 
+    showHub, setShowHub, 
+    hubInitialView, 
+    maestroEnabled,
+    showCreateImport,
+    setShowCreateImport
+  } = useApp();
   const maestroAccent = '#ff4da6';
 
   return (
@@ -77,7 +87,8 @@ function AppContent() {
           <ThemePickerPanel />
           {workspaceSection === 'deck' ? <ArcadePanel /> : null}
           <MaestroPanel />
-          <OperationsHub />
+          <Hub />
+          <CreateImportModal isOpen={showCreateImport} onClose={() => setShowCreateImport(false)} />
           <AgentCreatorModal />
           <AgentImportFlow />
           <OnboardingFlow />

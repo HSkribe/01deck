@@ -138,7 +138,7 @@ const IQ_QUESTION_POOL: IqQuestion[] = [
   { prompt: 'In a lake, a patch of lily pads doubles every day. It takes 48 days to cover the whole lake. How long to cover half?', options: ['24 days', '47 days', '36 days', '12 days'], answer: '47 days', explanation: 'Since the patch doubles each day, on day 47 it covered half the lake, then doubled to cover all on day 48.', difficulty: 'hard' },
   { prompt: 'What comes next in the sequence: J, F, M, A, M, J, ?', options: ['A', 'J', 'S', 'O'], answer: 'J', explanation: 'These are the first letters of the months: January, February, March, April, May, June — next is July (J).', difficulty: 'hard' },
   { prompt: 'Five people each shake hands with everyone else exactly once. How many handshakes in total?', options: ['8', '10', '12', '20'], answer: '10', explanation: 'The formula is n(n-1)/2 = 5×4/2 = 10 handshakes.', difficulty: 'hard' },
-  { prompt: 'Which is the largest: 2⁵⁰, 3⁴⁰, 5³⁰, 10²⁰', options: ['2⁵⁰', '3⁴⁰', '5³⁰', '10²⁰'], answer: '3⁴⁰', explanation: 'Estimating logs: 50log2≈15.05, 40log3≈19.08, 30log5≈20.97... wait — 5³⁰ wins. Actually 5³⁰ ≈ 10²¹ vs 3⁴⁰ ≈ 10¹⁹ vs 10²⁰. So 5³⁰ is largest. The answer exploits log comparison.', difficulty: 'hard' },
+  { prompt: 'Which is the largest: 2⁵⁰, 3⁴⁰, 5³⁰, 10²⁰', options: ['2⁵⁰', '3⁴⁰', '5³⁰', '10²⁰'], answer: '5³⁰', explanation: 'Log comparison shows 5³⁰ is the largest: it is about 10²¹, which is larger than 10²⁰, 3⁴⁰, and 2⁵⁰.', difficulty: 'hard' },
 ];
 
 // Per-session: shuffle and pick 12 questions (4 easy, 4 medium, 4 hard)
@@ -193,7 +193,7 @@ function MbtiAssessment() {
   return (
     <AssessmentShell
       title="MBTI Style Profile"
-      subtitle={mode === 'human' ? 'A stronger quick-read with 8 questions, clearer polarity, and a more interpretive result surface.' : chatAgent ? `${chatAgent.name} is being profiled from its metadata and behavior cues.` : 'Attach an agent to run agent mode.'}
+      subtitle={mode === 'human' ? 'A quick MBTI-style snapshot with clearer polarity and a more interpretive result surface.' : chatAgent ? `${chatAgent.name} is being profiled from its metadata and behavior cues.` : 'Attach an agent to run agent mode.'}
       mode={mode}
       setMode={next => {
         setMode(next);
@@ -244,7 +244,7 @@ function BigFiveAssessment() {
   return (
     <AssessmentShell
       title="Big Five Snapshot"
-      subtitle={mode === 'human' ? 'Two questions per trait with normalized scoring, cleaner interpretation, and saved history.' : chatAgent ? `${chatAgent.name} is generating a simulated trait pattern.` : 'Attach an agent to run agent mode.'}
+      subtitle={mode === 'human' ? 'A quick Big Five snapshot with normalized scoring, cleaner interpretation, and saved history.' : chatAgent ? `${chatAgent.name} is generating a simulated trait pattern.` : 'Attach an agent to run agent mode.'}
       mode={mode}
       setMode={next => {
         setMode(next);
@@ -342,7 +342,7 @@ function IqAssessment() {
   return (
     <AssessmentShell
       title="IQ Logic Test"
-      subtitle={mode === 'human' ? 'A stronger mixed-difficulty logic test covering number patterns, analogy, deduction, and spatial-style reasoning.' : chatAgent ? `${chatAgent.name} is taking the same test through a simulated reasoning profile.` : 'Attach an agent to run agent mode.'}
+      subtitle={mode === 'human' ? 'A quick mixed-difficulty reasoning snapshot covering number patterns, analogy, deduction, and spatial-style logic.' : chatAgent ? `${chatAgent.name} is taking the same test through a simulated reasoning profile.` : 'Attach an agent to run agent mode.'}
       mode={mode}
       setMode={next => {
         setMode(next);

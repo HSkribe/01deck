@@ -1,0 +1,225 @@
+project: 01Deck
+mode: NEXUS-Micro
+artifact_root: 01Deck/test_ads/artifacts
+log_root: 01Deck/test_ads/logs
+
+recommended_capture_order:
+  - S04
+  - S07
+  - S08
+  - S02
+  - S01
+  - S03
+  - S05
+  - S06
+
+recommended_agents:
+  - agents-orchestrator
+  - project-manager-senior
+  - design-ux-researcher
+  - testing-evidence-collector
+  - testing-reality-checker
+  - testing-test-results-analyzer
+  - testing-workflow-optimizer
+  - marketing-growth-hacker
+  - marketing-content-creator
+  - design-visual-storyteller
+  - marketing-social-media-strategist
+  - support-executive-summary-generator
+
+scenarios:
+  - scenario_id: S01
+    scenario_name: First-time user reaches a live interactive assessment
+    persona: Curious new visitor
+    user_intent: Open Learn and reach a real interactive test quickly
+    business_importance: High
+    qa_priority: Critical
+    ad_potential: Medium
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - 01Deck is running locally
+      - clean browser session
+      - default 01Deck profile is active
+    exact_steps:
+      - Open 01Deck
+      - Navigate to Learn
+      - Open Tests
+      - Select a live assessment card
+      - Reach the first interactive question
+    expected_result:
+      - user reaches an active assessment without confusion
+      - the interface clearly signals that the test is interactive now
+    visible_value_moment: first real question appears with clear response options
+    likely_friction_points:
+      - weak discoverability between Learn tabs
+      - confusion between live and preview-only tests
+
+  - scenario_id: S02
+    scenario_name: User completes a short test and sees a result
+    persona: Curious self-discovery user
+    user_intent: Finish a lightweight assessment and see a result worth sharing
+    business_importance: High
+    qa_priority: High
+    ad_potential: Medium
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - assessment state can be completed in one sitting
+      - clean or reset local storage if needed
+    exact_steps:
+      - Open Learn
+      - Start a live assessment
+      - answer enough questions to reach the result state
+    expected_result:
+      - assessment completes without dead ends
+      - result is visible and readable on screen
+    visible_value_moment: result screen appears
+    likely_friction_points:
+      - quiz length feels too long for ad capture
+      - result state lacks punch or clarity
+
+  - scenario_id: S03
+    scenario_name: User opens a how-to and gets a usable plan immediately
+    persona: First-time practical learner
+    user_intent: Find one useful how-to and understand what to do next
+    business_importance: High
+    qa_priority: High
+    ad_potential: Medium
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - Learn how-to content is present
+    exact_steps:
+      - Open Learn
+      - Switch to How-To
+      - Open the featured guide
+      - scroll through goal, steps, checklist, and deliverables
+    expected_result:
+      - guide opens cleanly
+      - content structure is immediately obvious
+    visible_value_moment: structured guide content fills the screen
+    likely_friction_points:
+      - value is informative but may be visually calmer than a strong ad flow
+      - reading-heavy capture may feel slow
+
+  - scenario_id: S04
+    scenario_name: User deploys selected agents from Universal Deploy
+    persona: Operator-minded user
+    user_intent: choose agents and generate a deployment action quickly
+    business_importance: High
+    qa_priority: Critical
+    ad_potential: High
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - Universal Deploy surface is available
+      - agent catalog is loaded
+    exact_steps:
+      - Open the Deploy workspace
+      - select one or more agents
+      - choose a target format if available
+      - generate the deploy command or payload
+    expected_result:
+      - selected agents produce a visible deployment result
+      - output is clearly ready to use
+    visible_value_moment: payload or command block appears
+    likely_friction_points:
+      - selection model is unclear
+      - output looks too technical or cramped for short-form footage
+    marketing_note: strongest general-audience workflow because the selection-to-output transformation is immediate and visible
+
+  - scenario_id: S05
+    scenario_name: User jumps from Arcade card to a live session
+    persona: Casual explorer
+    user_intent: move from browsing to a live playable experience
+    business_importance: Medium
+    qa_priority: Medium
+    ad_potential: Medium
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - at least one live arcade session is visible
+    exact_steps:
+      - Open Arcade
+      - locate a live session card
+      - use the jump action
+    expected_result:
+      - the interface moves the user to the live area without confusion
+    visible_value_moment: live area appears and clearly looks active
+    likely_friction_points:
+      - live payoff may be weaker than expected
+      - visual transition may not feel dramatic enough for ads
+
+  - scenario_id: S06
+    scenario_name: New user understands product value from the Home hub
+    persona: First-time evaluator
+    user_intent: decide quickly whether 01Deck is worth exploring
+    business_importance: High
+    qa_priority: High
+    ad_potential: Medium
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - default home experience is active
+    exact_steps:
+      - Open 01Deck
+      - stay on Home
+      - identify the first obvious next action
+      - move into one recommended surface
+    expected_result:
+      - the product direction is legible
+      - the next action is clear
+    visible_value_moment: clear route into a useful section appears
+    likely_friction_points:
+      - value may still feel broad instead of sharp
+      - first screen may not produce ad-grade payoff
+
+  - scenario_id: S07
+    scenario_name: Foundry dashboard shows measurable support-optimization value
+    persona: Operations lead
+    user_intent: inspect serious benchmark and optimization surfaces
+    business_importance: High
+    qa_priority: High
+    ad_potential: High
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - 01FOUNDRY profile is running
+      - seeded benchmark data exists
+    exact_steps:
+      - Open the Foundry profile
+      - open dashboard or scorecard
+      - identify benchmark outputs or optimization metrics
+    expected_result:
+      - metrics and workflow states are legible
+      - serious product value is visible
+    visible_value_moment: benchmark or scorecard data becomes readable
+    likely_friction_points:
+      - strong QA value but weak short-form visual drama
+      - may need staged rerun instead of raw footage
+    marketing_note: best serious-product proof flow when the dashboard is seeded and readable
+
+  - scenario_id: S08
+    scenario_name: Benchmark report or lineage view demonstrates before-and-after proof
+    persona: Technical evaluator
+    user_intent: inspect evidence of optimization rather than generic claims
+    business_importance: High
+    qa_priority: Medium
+    ad_potential: High
+    record_screen: yes
+    clean_rerun_likely: yes
+    preconditions:
+      - benchmark report and lineage artifacts are seeded
+    exact_steps:
+      - Open Benchmark Report or Lineage Viewer
+      - reveal the strongest before-and-after change
+      - highlight the clearest measurable improvement
+    expected_result:
+      - proof of change is visible on screen
+      - viewer can understand what improved
+    visible_value_moment: before-and-after or benchmark delta is shown
+    likely_friction_points:
+      - may be too analytical for raw short-form ads
+      - may require overlay or staged narration for clarity
+    marketing_note: strongest evidence-driven story if the before-and-after delta is obvious on screen

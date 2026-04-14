@@ -1,0 +1,10 @@
+{
+  "scenario_id": "S04",
+  "scenario_name": "User deploys selected agents from Universal Deploy",
+  "attempt": 2,
+  "status": "failed",
+  "persona": "Operator-minded user",
+  "qa_priority": "Critical",
+  "ad_potential": "High",
+  "record_screen": true
+}

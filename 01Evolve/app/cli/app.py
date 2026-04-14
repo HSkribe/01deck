@@ -7,6 +7,7 @@ import typer
 
 from app.core.bootstrap import build_services
 from app.core.lineage.service import LineageService
+from app.core.runtime.paths import ensure_runtime_tree
 from app.core.schemas.models import LifecycleEventType, LifecycleState, PluginHook, SupportAdapterMode, SupportSelectionStrategy
 
 app = typer.Typer(no_args_is_help=True)
@@ -14,6 +15,17 @@ app = typer.Typer(no_args_is_help=True)
 
 def _services(db_url: str | None = None, plugin_config: str | None = None):
     return build_services(db_url=db_url, plugin_config_path=plugin_config)
+
+
+@app.command("init-local-home")
+def init_local_home():
+    paths = ensure_runtime_tree()
+    typer.echo(
+        json.dumps(
+            {key: str(value) for key, value in paths.items()},
+            indent=2,
+        )
+    )
 
 
 @app.command("create-agent")
