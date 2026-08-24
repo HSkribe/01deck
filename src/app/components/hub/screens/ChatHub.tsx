@@ -189,13 +189,15 @@ export function ChatHub() {
           ))}
         </div>
 
-        {/* Online count */}
+        {/* Online count — derived from seed users */}
         <div
           className="flex items-center gap-1.5 px-3 py-2 flex-shrink-0"
           style={{ borderTop: `1px solid ${t.border}` }}
         >
           <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#22c55e' }} />
-          <span className="text-[10px]" style={{ color: t.textMuted }}>5 online</span>
+          <span className="text-[10px]" style={{ color: t.textMuted }}>
+            {onlineCount} online
+          </span>
           <Users size={10} className="ml-auto" style={{ color: t.textMuted }} />
         </div>
       </div>
