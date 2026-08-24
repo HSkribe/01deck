@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Home, Gamepad2, BookOpen, PlusSquare, Library, User,
-  ChevronLeft, Search, Zap,
+  ChevronLeft, Search, Zap, MessageSquare, Hash, Mail,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useHub, HubView } from '../../context/HubContext';
@@ -14,21 +14,27 @@ const NAV_ITEMS: {
   color: string;
   glow: string;
 }[] = [
-  { id: 'home',    label: 'Home',    icon: Home,       color: '#ffffff',  glow: 'rgba(255,255,255,0.2)' },
-  { id: 'arcade',  label: 'Arcade',  icon: Gamepad2,   color: '#a855f7',  glow: 'rgba(168,85,247,0.3)' },
-  { id: 'learn',   label: 'Learn',   icon: BookOpen,   color: '#06b6d4',  glow: 'rgba(6,182,212,0.3)' },
-  { id: 'create',  label: 'Create',  icon: PlusSquare, color: '#f59e0b',  glow: 'rgba(245,158,11,0.3)' },
-  { id: 'library', label: 'Library', icon: Library,    color: '#10b981',  glow: 'rgba(16,185,129,0.3)' },
-  { id: 'profile', label: 'Profile', icon: User,       color: '#94a3b8',  glow: 'rgba(148,163,184,0.2)' },
+  { id: 'home',     label: 'Home',     icon: Home,          color: '#ffffff',  glow: 'rgba(255,255,255,0.2)' },
+  { id: 'arcade',   label: 'Arcade',   icon: Gamepad2,      color: '#a855f7',  glow: 'rgba(168,85,247,0.3)'  },
+  { id: 'learn',    label: 'Learn',    icon: BookOpen,      color: '#06b6d4',  glow: 'rgba(6,182,212,0.3)'   },
+  { id: 'create',   label: 'Create',   icon: PlusSquare,    color: '#f59e0b',  glow: 'rgba(245,158,11,0.3)'  },
+  { id: 'library',  label: 'Library',  icon: Library,       color: '#10b981',  glow: 'rgba(16,185,129,0.3)'  },
+  { id: 'forum',    label: 'Forum',    icon: MessageSquare, color: '#c084fc',  glow: 'rgba(192,132,252,0.3)' },
+  { id: 'chat',     label: 'Chat',     icon: Hash,          color: '#22d3ee',  glow: 'rgba(34,211,238,0.3)'  },
+  { id: 'messages', label: 'Messages', icon: Mail,          color: '#34d399',  glow: 'rgba(52,211,153,0.3)'  },
+  { id: 'profile',  label: 'Profile',  icon: User,          color: '#94a3b8',  glow: 'rgba(148,163,184,0.2)' },
 ];
 
 const SECTION_ACCENT: Record<HubView, string> = {
-  home:    '#ffffff',
-  arcade:  '#a855f7',
-  learn:   '#06b6d4',
-  create:  '#f59e0b',
-  library: '#10b981',
-  profile: '#94a3b8',
+  home:     '#ffffff',
+  arcade:   '#a855f7',
+  learn:    '#06b6d4',
+  create:   '#f59e0b',
+  library:  '#10b981',
+  forum:    '#c084fc',
+  chat:     '#22d3ee',
+  messages: '#34d399',
+  profile:  '#94a3b8',
 };
 
 interface HubNavProps {

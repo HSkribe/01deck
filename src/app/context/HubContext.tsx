@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Game, LearnTest, Course, HowTo, CreateContentType, ArcadeCategory } from '../data/hubData';
 
-export type HubView = 'home' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
+export type HubView = 'home' | 'arcade' | 'learn' | 'create' | 'library' | 'profile' | 'forum' | 'chat' | 'messages';
 export type LearnTab = 'tests' | 'class' | 'how-to';
 export type LibraryTab = 'in-progress' | 'saved' | 'completed' | 'drafts';
 

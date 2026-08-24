@@ -10,6 +10,9 @@ import { LearnHub } from './screens/LearnHub';
 import { CreateHub } from './screens/CreateHub';
 import { LibraryHub } from './screens/LibraryHub';
 import { ProfileHub } from './screens/ProfileHub';
+import { ForumHub } from './screens/ForumHub';
+import { ChatHub } from './screens/ChatHub';
+import { MessagesHub } from './screens/MessagesHub';
 
 // ─── Hub Top Bar ──────────────────────────────────────────
 
@@ -23,6 +26,7 @@ function HubTopBar({ onClose }: { onClose: () => void }) {
 
   const viewLabels: Record<string, string> = {
     home: 'Hub', arcade: 'Arcade', learn: 'Learn', create: 'Create', library: 'Library', profile: 'Profile',
+    forum: 'Forum', chat: 'Chat', messages: 'Messages',
   };
 
   useEffect(() => {
@@ -152,6 +156,9 @@ function HubContent() {
         {currentView === 'create' && <CreateHub />}
         {currentView === 'library' && <LibraryHub />}
         {currentView === 'profile' && <ProfileHub />}
+        {currentView === 'forum' && <ForumHub />}
+        {currentView === 'chat' && <ChatHub />}
+        {currentView === 'messages' && <MessagesHub />}
       </motion.div>
     </AnimatePresence>
   );
