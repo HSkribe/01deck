@@ -33,7 +33,7 @@ export const chatChannels: ChatChannel[] = [
   { id: 'off-topic',name: 'off-topic',description: 'Anything goes',                 color: '#6b7280' },
 ];
 
-const CHAT_USERS: ChatUser[] = [
+export const CHAT_USERS: ChatUser[] = [
   { id: 'u1', name: 'NexusPilot', avatar: 'https://api.dicebear.com/9.x/pixel-art/svg?seed=nexuspilot', online: true  },
   { id: 'u2', name: 'VoidCaster', avatar: 'https://api.dicebear.com/9.x/pixel-art/svg?seed=voidcaster', online: true  },
   { id: 'u3', name: 'ArcHerald',  avatar: 'https://api.dicebear.com/9.x/pixel-art/svg?seed=archerald',  online: false },

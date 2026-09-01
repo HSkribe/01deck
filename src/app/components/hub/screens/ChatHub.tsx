@@ -4,7 +4,7 @@ import { Hash, Send, Users } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import {
   ChatChannel, ChatMessage, ChatUser,
-  chatChannels, seedChatMessages, ME,
+  chatChannels, seedChatMessages, ME, CHAT_USERS,
 } from '../../../data/chatData';
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -149,6 +149,7 @@ export function ChatHub() {
   }, [channelMessages.length, activeChannelId]);
 
   const totalUnread = channels.reduce((sum, c) => sum + (c.unread ?? 0), 0);
+  const onlineCount = CHAT_USERS.filter(u => u.online).length;
 
   return (
     <div className="flex h-full overflow-hidden" style={{ background: t.bg }}>

@@ -255,7 +255,7 @@ export function AuthModal() {
                 autoComplete="username"
                 value={siUsername.value}
                 onChange={e => setSiUsername(set(siUsername, e.target.value))}
-                onBlur={() => setSiUsername(touch(siUsername))}
+                onBlur={() => siUsername.value.trim() && setSiUsername(touch(siUsername))}
                 disabled={submitting}
               />
               {showErr(siUsername) && !siUsername.value.trim() && (
@@ -271,7 +271,7 @@ export function AuthModal() {
                 autoComplete="current-password"
                 value={siPassword.value}
                 onChange={e => setSiPassword(set(siPassword, e.target.value))}
-                onBlur={() => setSiPassword(touch(siPassword))}
+                onBlur={() => siPassword.value && setSiPassword(touch(siPassword))}
                 disabled={submitting}
               />
               {showErr(siPassword) && !siPassword.value && (
