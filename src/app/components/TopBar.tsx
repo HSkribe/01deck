@@ -29,6 +29,7 @@ import { appPluginCatalog } from '../plugins/registry';
 import { evolutionExperiencePluginManifest } from '../plugins/01evolve/manifest';
 import { IS_DECK_PRODUCT, SERIOUS_PRODUCT_MODE } from '../utils/productMode';
 import { ProfileModal } from './ProfileModal';
+import { useDismissableMenu } from '../hooks/useDismissableMenu';
 
 const navItems: Array<{ id: WorkspaceSectionId; label: string; icon: typeof Search }> = SERIOUS_PRODUCT_MODE
   ? [{ id: 'foundry', label: '01FOUNDRY', icon: ShieldCheck }]
@@ -70,7 +71,9 @@ function ProfileAvatarButton() {
   return (
     <>
       <motion.button
+        type="button"
         onClick={() => setShowProfile(true)}
+        aria-label="Open your profile"
         className="relative w-8 h-8 rounded-full overflow-hidden flex items-center justify-center"
         style={{
           border: `1px solid ${t.accent}66`,
@@ -101,7 +104,7 @@ function ProfileAvatarButton() {
 export function TopBar() {
   const {
     currentTheme: t,
-    isOnline, setIsOnline,
+    chatResponseSource,
     searchQuery, setSearchQuery,
     isChatOpen, setIsChatOpen,
     setIsThemeOpen,
@@ -112,8 +115,6 @@ export function TopBar() {
     setShowEvolutionLab,
     isPluginEnabled,
     setPluginEnabled,
-    maestroEnabled,
-    setMaestroEnabled,
     setMaestroOpen,
     setIsOpsOpen,
     setShowCreateImport,
@@ -121,6 +122,11 @@ export function TopBar() {
 
   const [showPlugins, setShowPlugins] = useState(false);
   const [showPluginInfo, setShowPluginInfo] = useState(false);
+  const closePluginPanels = React.useCallback(() => {
+    setShowPluginInfo(false);
+    setShowPlugins(false);
+  }, []);
+  const pluginMenuRef = useDismissableMenu<HTMLDivElement>(showPlugins || showPluginInfo, closePluginPanels);
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
   const displayContext = useMemo(
     () => (showEvolutionLab ? pageContext : pageContextBySection[workspaceSection]),
@@ -224,10 +230,16 @@ export function TopBar() {
         )}
       </div>
 
+      {/* Trailing action cluster: scrolls horizontally instead of being
+          clipped or squeezed illegible at narrower viewports (1280x720,
+          1440x900) — every item here, including Skin, stays reachable both
+          by mouse (drag/scroll) and by keyboard (Tab auto-scrolls the
+          focused button into view), rather than shrinking text to fit. */}
+      <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5">
       {IS_DECK_PRODUCT ? (
         <motion.button
           onClick={() => setShowCreateImport(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
           style={{
             background: `${t.accent}15`,
             border: `1px solid ${t.accent}40`,
@@ -244,7 +256,7 @@ export function TopBar() {
       {IS_DECK_PRODUCT && evolutionPluginEnabled ? (
         <motion.button
           onClick={() => setShowEvolutionLab(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs relative overflow-hidden"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs relative overflow-hidden flex-shrink-0"
           style={{
             background: showEvolutionLab ? 'rgba(16,185,129,0.14)' : 'transparent',
             border: `1px solid ${showEvolutionLab ? 'rgba(16,185,129,0.45)' : t.border}`,
@@ -264,9 +276,12 @@ export function TopBar() {
       ) : null}
 
       {IS_DECK_PRODUCT ? (
-        <div className="relative">
+        <div className="relative flex-shrink-0" ref={pluginMenuRef}>
           <motion.button
+            type="button"
             onClick={() => setShowPlugins(open => !open)}
+            aria-haspopup="true"
+            aria-expanded={showPlugins}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
             style={{
               background: showPlugins ? t.surface3 : 'transparent',
@@ -283,6 +298,8 @@ export function TopBar() {
           <AnimatePresence>
             {showPlugins ? (
               <motion.div
+                role="menu"
+                aria-label="Available plugins"
                 initial={{ opacity: 0, y: -8, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.95 }}
@@ -299,39 +316,11 @@ export function TopBar() {
                 </div>
                 
                 <div className="space-y-2">
-                  {/* Maestro Plugin (Always shows, greyed if not enabled) */}
-                  <div 
-                    className="rounded-xl p-3 flex items-center justify-between"
-                    style={{ background: t.surface1, border: `1px solid ${t.border}`, opacity: maestroEnabled ? 1 : 0.6 }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: maestroEnabled ? 'rgba(255,77,166,0.1)' : t.surface3 }}>
-                        <Music size={16} style={{ color: maestroEnabled ? '#ff4da6' : t.textMuted }} />
-                      </div>
-                      <div>
-                        <div className="text-xs font-medium" style={{ color: maestroEnabled ? t.text : t.textMuted }}>Maestro</div>
-                        <div className="text-[10px]" style={{ color: t.textMuted }}>Audio spatial layer</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const next = !maestroEnabled;
-                        setMaestroEnabled(next);
-                        if (next) setMaestroOpen(true);
-                      }}
-                      className="px-2 py-1 rounded-lg text-[10px] transition-all"
-                      style={{
-                        background: maestroEnabled ? 'rgba(255,77,166,0.15)' : t.surface3,
-                        border: `1px solid ${maestroEnabled ? '#ff4da6' : t.border}`,
-                        color: maestroEnabled ? '#ff4da6' : t.textMuted,
-                      }}
-                    >
-                      {maestroEnabled ? 'Active' : 'Load'}
-                    </button>
-                  </div>
-
                   {appPluginCatalog.map(plugin => {
                     const enabled = isPluginEnabled(plugin.pluginId as any);
+                    const isMaestro = plugin.pluginId === '01maestro';
+                    const accentColor = isMaestro ? '#ff4da6' : t.accent;
+                    const PluginIcon = isMaestro ? Music : Package2;
                     return (
                       <div
                         key={plugin.pluginId}
@@ -339,8 +328,8 @@ export function TopBar() {
                         style={{ background: t.surface1, border: `1px solid ${t.border}`, opacity: enabled ? 1 : 0.6 }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: enabled ? `${t.accent}15` : t.surface3 }}>
-                            <Package2 size={16} style={{ color: enabled ? t.accent : t.textMuted }} />
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: enabled ? `${accentColor}15` : t.surface3 }}>
+                            <PluginIcon size={16} style={{ color: enabled ? accentColor : t.textMuted }} />
                           </div>
                           <div>
                             <div className="text-xs font-medium" style={{ color: enabled ? t.text : t.textMuted }}>{plugin.name}</div>
@@ -348,12 +337,19 @@ export function TopBar() {
                           </div>
                         </div>
                         <button
-                          onClick={() => setPluginEnabled(plugin.pluginId as any, !enabled)}
+                          type="button"
+                          onClick={() => {
+                            const next = !enabled;
+                            setPluginEnabled(plugin.pluginId as any, next);
+                            if (isMaestro && next) setMaestroOpen(true);
+                          }}
+                          aria-pressed={enabled}
+                          aria-label={`${enabled ? 'Deactivate' : 'Load'} ${plugin.name} plugin`}
                           className="px-2 py-1 rounded-lg text-[10px] transition-all"
                           style={{
-                            background: enabled ? `${t.accent}15` : t.surface3,
-                            border: `1px solid ${enabled ? t.accent : t.border}`,
-                            color: enabled ? t.text : t.textMuted,
+                            background: enabled ? `${accentColor}15` : t.surface3,
+                            border: `1px solid ${enabled ? accentColor : t.border}`,
+                            color: enabled ? accentColor : t.textMuted,
                           }}
                         >
                           {enabled ? 'Active' : 'Load'}
@@ -364,8 +360,11 @@ export function TopBar() {
                 </div>
 
                 <div className="pt-2 border-t" style={{ borderColor: t.border }}>
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => setShowPluginInfo(true)}
+                    aria-haspopup="true"
+                    aria-expanded={showPluginInfo}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] tracking-wider uppercase transition-colors hover:bg-white/5"
                     style={{ background: t.surface3, color: t.textMuted }}
                   >
@@ -380,6 +379,8 @@ export function TopBar() {
           <AnimatePresence>
             {showPluginInfo && (
               <motion.div
+                role="region"
+                aria-label="01Deck Plugin System info"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
@@ -392,7 +393,7 @@ export function TopBar() {
               >
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-sm font-medium" style={{ color: t.text }}>01Deck Plugin System</h4>
-                  <button onClick={() => setShowPluginInfo(false)} style={{ color: t.textMuted }}><X size={14} /></button>
+                  <button type="button" onClick={() => setShowPluginInfo(false)} aria-label="Close" style={{ color: t.textMuted }}><X size={14} /></button>
                 </div>
                 <div className="space-y-3 text-xs leading-relaxed" style={{ color: t.textMuted }}>
                   <p>
@@ -402,7 +403,8 @@ export function TopBar() {
                     Some plugins require a local backend connection, while others run entirely in your browser. Click <span style={{ color: t.accent }}>Load</span> to initialize a plugin's assets.
                   </p>
                 </div>
-                <button 
+                <button
+                  type="button"
                   onClick={() => setShowPluginInfo(false)}
                   className="mt-6 w-full py-2 rounded-xl text-xs font-medium transition-all"
                   style={{ background: `${t.accent}15`, border: `1px solid ${t.accent}30`, color: t.accent }}
@@ -417,7 +419,7 @@ export function TopBar() {
 
       <motion.button
         onClick={() => setIsOpsOpen(true)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
         style={{
           background: 'transparent',
           border: `1px solid ${t.border}`,
@@ -434,25 +436,44 @@ export function TopBar() {
         <span>Hub</span>
       </motion.button>
 
+      {/* Was a manual "Cloud/Local" toggle that didn't connect to anything —
+          clicking it just hid a disclaimer banner, regardless of whether
+          chat was actually live. Now it's a real, read-only status: whether
+          the next chat message will get a live model reply or a simulated
+          one, and it opens Chat (with settings expanded) so the user can
+          act on it instead of just flipping a cosmetic flag. */}
       <motion.button
-        onClick={() => setIsOnline(!isOnline)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+        type="button"
+        onClick={() => setIsChatOpen(true)}
+        aria-label={
+          chatResponseSource === 'local'
+            ? 'Chat is running in simulated mode — open chat to connect a live model'
+            : 'Chat is connected to a live model — open chat'
+        }
+        title={
+          chatResponseSource === 'local'
+            ? 'No live model connected — chat replies are simulated'
+            : chatResponseSource === 'direct-key'
+              ? 'Live via your configured provider key'
+              : 'Live via the connected backend'
+        }
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
         style={{
-          background: isOnline ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-          border: `1px solid ${isOnline ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-          color: isOnline ? '#22c55e' : '#ef4444',
+          background: chatResponseSource === 'local' ? 'rgba(234,179,8,0.1)' : 'rgba(34,197,94,0.1)',
+          border: `1px solid ${chatResponseSource === 'local' ? 'rgba(234,179,8,0.3)' : 'rgba(34,197,94,0.3)'}`,
+          color: chatResponseSource === 'local' ? '#eab308' : '#22c55e',
         }}
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
       >
-        {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
-        <span>{isOnline ? 'Cloud' : 'Local'}</span>
+        {chatResponseSource === 'local' ? <WifiOff size={13} /> : <Wifi size={13} />}
+        <span>{chatResponseSource === 'local' ? 'Simulated' : 'Live'}</span>
       </motion.button>
 
       {IS_DECK_PRODUCT ? (
         <motion.button
           onClick={() => setIsChatOpen(c => !c)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
           style={{
             background: isChatOpen ? `${t.accent}15` : 'transparent',
             border: `1px solid ${isChatOpen ? t.accent : t.border}`,
@@ -468,7 +489,7 @@ export function TopBar() {
 
       <motion.button
         onClick={() => setIsThemeOpen(true)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
         style={{
           background: 'transparent',
           border: `1px solid ${t.border}`,
@@ -480,6 +501,7 @@ export function TopBar() {
         <Palette size={13} />
         <span>Skin</span>
       </motion.button>
+      </div>
 
       <ProfileAvatarButton />
     </div>

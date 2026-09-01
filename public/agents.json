@@ -1,0 +1,472 @@
+{
+  "generatedAt": "2026-08-28T06:03:07Z",
+  "source": "01Deck built-in agent roster (src/app/data/agents.ts) \u2014 does not include agents users create locally, which live only in that user's browser.",
+  "product": "01Deck",
+  "count": 16,
+  "agents": [
+    {
+      "id": "a001",
+      "name": "ARIA",
+      "role": "Intelligence Scout",
+      "category": "research",
+      "description": "Deep web intelligence and pattern extraction at scale",
+      "specialization": "Signal Intelligence & Trend Mapping",
+      "protocolId": "PRO-001-ARIA",
+      "protocolVersion": "01P v3.0",
+      "rarity": "legend",
+      "tags": [
+        "intelligence",
+        "research",
+        "signals",
+        "NLP",
+        "analysis"
+      ],
+      "tools": [
+        "Web Crawler",
+        "NLP Analyzer",
+        "Graph Network Mapper",
+        "Pattern Engine",
+        "Sentiment Tracker"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a002",
+      "name": "NEXUS",
+      "role": "Full Stack Dev",
+      "category": "code",
+      "description": "Full-stack architecture and deployment across any stack",
+      "specialization": "Cloud-Native Architecture & API Design",
+      "protocolId": "PRO-002-NEXUS",
+      "protocolVersion": "01P v3.0",
+      "rarity": "mythic",
+      "tags": [
+        "engineering",
+        "fullstack",
+        "cloud",
+        "architecture",
+        "apis"
+      ],
+      "tools": [
+        "Code Generator",
+        "Debugger",
+        "Docker Orchestrator",
+        "CI/CD Pipeline",
+        "API Scaffold"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a003",
+      "name": "LYRA",
+      "role": "Brand Strategist",
+      "category": "creative",
+      "description": "Brand voice, identity systems, and market positioning",
+      "specialization": "Brand Architecture & Narrative Design",
+      "protocolId": "PRO-003-LYRA",
+      "protocolVersion": "01P v2.8",
+      "rarity": "epic",
+      "tags": [
+        "brand",
+        "creative",
+        "strategy",
+        "narrative",
+        "identity"
+      ],
+      "tools": [
+        "Tone Analyzer",
+        "Competitor Map",
+        "Content Matrix",
+        "Persona Builder",
+        "Story Engine"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a004",
+      "name": "ORION",
+      "role": "Product Strategist",
+      "category": "strategy",
+      "description": "Product roadmapping, market-fit analysis, and go-to-market strategy",
+      "specialization": "Product Vision & GTM Execution",
+      "protocolId": "PRO-004-ORION",
+      "protocolVersion": "01P v2.8",
+      "rarity": "rare",
+      "tags": [
+        "product",
+        "strategy",
+        "roadmap",
+        "GTM",
+        "market-fit"
+      ],
+      "tools": [
+        "Roadmap Builder",
+        "Market Analyzer",
+        "OKR Tracker",
+        "Stakeholder Matrix",
+        "Feature Prioritizer"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a005",
+      "name": "VELA",
+      "role": "DevOps Engineer",
+      "category": "code",
+      "description": "Infrastructure automation, CI/CD pipelines, and system reliability",
+      "specialization": "Site Reliability & Kubernetes Orchestration",
+      "protocolId": "PRO-005-VELA",
+      "protocolVersion": "01P v2.7",
+      "rarity": "rare",
+      "tags": [
+        "devops",
+        "infrastructure",
+        "kubernetes",
+        "reliability",
+        "automation"
+      ],
+      "tools": [
+        "Terraform",
+        "Kubernetes Manager",
+        "Log Analyzer",
+        "Alert System",
+        "Cost Optimizer"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a006",
+      "name": "KOVA",
+      "role": "Growth Planner",
+      "category": "strategy",
+      "description": "Growth experimentation, funnel optimization, and acquisition channels",
+      "specialization": "Growth Loops & Viral Mechanics",
+      "protocolId": "PRO-006-KOVA",
+      "protocolVersion": "01P v2.6",
+      "rarity": "uncommon",
+      "tags": [
+        "growth",
+        "experiments",
+        "acquisition",
+        "retention",
+        "optimization"
+      ],
+      "tools": [
+        "A/B Test Engine",
+        "Funnel Visualizer",
+        "Cohort Analyzer",
+        "Channel Scorer",
+        "Retention Modeler"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a007",
+      "name": "SOLANA",
+      "role": "Financial Analyst",
+      "category": "finance",
+      "description": "Financial modeling, valuation, and investment analysis",
+      "specialization": "DCF Modeling & Portfolio Risk Assessment",
+      "protocolId": "PRO-007-SOLANA",
+      "protocolVersion": "01P v2.9",
+      "rarity": "epic",
+      "tags": [
+        "finance",
+        "modeling",
+        "valuation",
+        "risk",
+        "investment"
+      ],
+      "tools": [
+        "DCF Builder",
+        "Risk Calculator",
+        "Portfolio Optimizer",
+        "Market Feed",
+        "Scenario Engine"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a008",
+      "name": "ECHO",
+      "role": "PR Specialist",
+      "category": "comms",
+      "description": "Press relations, crisis communication, and media narrative management",
+      "specialization": "Media Strategy & Crisis Response",
+      "protocolId": "PRO-008-ECHO",
+      "protocolVersion": "01P v2.5",
+      "rarity": "common",
+      "tags": [
+        "PR",
+        "media",
+        "communications",
+        "crisis",
+        "narrative"
+      ],
+      "tools": [
+        "Press Release Generator",
+        "Media Contact DB",
+        "Sentiment Monitor",
+        "Crisis Playbook",
+        "Journalist Matcher"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a009",
+      "name": "NOVA",
+      "role": "ML Engineer",
+      "category": "data",
+      "description": "Machine learning model design, training pipelines, and MLOps",
+      "specialization": "Transformer Architecture & Model Optimization",
+      "protocolId": "PRO-009-NOVA",
+      "protocolVersion": "01P v3.0",
+      "rarity": "mythic",
+      "tags": [
+        "ML",
+        "AI",
+        "transformers",
+        "mlops",
+        "training"
+      ],
+      "tools": [
+        "PyTorch Pipeline",
+        "Model Registry",
+        "Hyperparameter Tuner",
+        "Eval Framework",
+        "Data Versioner"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a010",
+      "name": "SAGE",
+      "role": "Market Researcher",
+      "category": "research",
+      "description": "Consumer research, competitive intelligence, and market sizing",
+      "specialization": "Ethnographic Research & Demand Mapping",
+      "protocolId": "PRO-010-SAGE",
+      "protocolVersion": "01P v2.6",
+      "rarity": "uncommon",
+      "tags": [
+        "research",
+        "market",
+        "consumers",
+        "competitive",
+        "sizing"
+      ],
+      "tools": [
+        "Survey Engine",
+        "Focus Group Simulator",
+        "TAM Calculator",
+        "Competitor Radar",
+        "Trend Spotter"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a011",
+      "name": "FLUX",
+      "role": "Content Writer",
+      "category": "creative",
+      "description": "Long-form content, SEO articles, and thought leadership pieces",
+      "specialization": "Narrative Journalism & SEO Content Strategy",
+      "protocolId": "PRO-011-FLUX",
+      "protocolVersion": "01P v2.5",
+      "rarity": "common",
+      "tags": [
+        "content",
+        "writing",
+        "SEO",
+        "journalism",
+        "longform"
+      ],
+      "tools": [
+        "Article Generator",
+        "SEO Optimizer",
+        "Readability Scorer",
+        "Fact Checker",
+        "Headline Tester"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a012",
+      "name": "ATLAS",
+      "role": "Data Scientist",
+      "category": "data",
+      "description": "Statistical analysis, predictive modeling, and data visualization",
+      "specialization": "Causal Inference & Predictive Analytics",
+      "protocolId": "PRO-012-ATLAS",
+      "protocolVersion": "01P v2.8",
+      "rarity": "rare",
+      "tags": [
+        "data science",
+        "statistics",
+        "predictive",
+        "visualization",
+        "causal"
+      ],
+      "tools": [
+        "Python Analyst",
+        "R Studio Bridge",
+        "Visualization Engine",
+        "Hypothesis Tester",
+        "Model Explainer"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a013",
+      "name": "CIPHER",
+      "role": "Security Engineer",
+      "category": "code",
+      "description": "Application security, penetration testing, and vulnerability remediation",
+      "specialization": "Zero-Trust Architecture & Threat Modeling",
+      "protocolId": "PRO-013-CIPHER",
+      "protocolVersion": "01P v2.9",
+      "rarity": "epic",
+      "tags": [
+        "security",
+        "pentest",
+        "vulnerability",
+        "zero-trust",
+        "compliance"
+      ],
+      "tools": [
+        "Vuln Scanner",
+        "Pen Test Suite",
+        "SAST Runner",
+        "Threat Modeler",
+        "Compliance Auditor"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a014",
+      "name": "LUMEN",
+      "role": "Community Lead",
+      "category": "comms",
+      "description": "Community building, moderation strategy, and engagement programming",
+      "specialization": "Online Community Architecture & Culture Design",
+      "protocolId": "PRO-014-LUMEN",
+      "protocolVersion": "01P v2.6",
+      "rarity": "uncommon",
+      "tags": [
+        "community",
+        "engagement",
+        "moderation",
+        "culture",
+        "events"
+      ],
+      "tools": [
+        "Community Planner",
+        "Moderation Bot",
+        "Event Scheduler",
+        "Sentiment Pulse",
+        "Ambassador Tracker"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a015",
+      "name": "VECTOR",
+      "role": "Contract Reviewer",
+      "category": "finance",
+      "description": "Contract analysis, risk flagging, and legal document summarization",
+      "specialization": "Corporate Contract Law & Regulatory Compliance",
+      "protocolId": "PRO-015-VECTOR",
+      "protocolVersion": "01P v2.7",
+      "rarity": "common",
+      "tags": [
+        "legal",
+        "contracts",
+        "risk",
+        "compliance",
+        "review"
+      ],
+      "tools": [
+        "Contract Parser",
+        "Risk Flagger",
+        "Clause Library",
+        "Redline Engine",
+        "Compliance Checker"
+      ],
+      "capabilities": {
+        "hasEvolution": false,
+        "maestroEnabled": false
+      }
+    },
+    {
+      "id": "a016",
+      "name": "PRISM",
+      "role": "Business Intelligence",
+      "category": "data",
+      "description": "BI dashboards, KPI frameworks, and executive reporting systems",
+      "specialization": "Real-Time Analytics & Executive Dashboards",
+      "protocolId": "PRO-016-PRISM",
+      "protocolVersion": "01P v2.8",
+      "rarity": "rare",
+      "tags": [
+        "BI",
+        "dashboards",
+        "KPIs",
+        "reporting",
+        "analytics"
+      ],
+      "tools": [
+        "Dashboard Builder",
+        "KPI Library",
+        "Drill-Down Engine",
+        "Report Scheduler",
+        "Alert Manager"
+      ],
+      "capabilities": {
+        "hasEvolution": true,
+        "maestroEnabled": false
+      }
+    }
+  ]
+}

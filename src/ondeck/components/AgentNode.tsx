@@ -26,10 +26,10 @@ export function AgentNode({ data, selected }: NodeProps<AgentNodeData>) {
           <BrainCircuit size={12} />
           {agent.memory_enabled ? `Memory ${agent.persistent_memory.length}` : 'No memory'}
         </span>
-        {agent.needs_session_rekey && (
+        {agent.needs_private_key && (
           <span className="ondeck-badge ondeck-badge--red">
             <KeyRound size={12} />
-            Rekey
+            No private key
           </span>
         )}
       </div>

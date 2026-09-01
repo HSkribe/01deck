@@ -1,10 +1,14 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, User, Mail, Shield, Zap, ExternalLink, Activity, Trophy, Calendar } from 'lucide-react';
+import { X, User, Mail, Shield, Zap, ExternalLink, Activity, Trophy, Calendar, KeyRound } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { currentTheme: t, userAvatarUrl, allAgents } = useApp();
+  const { currentTheme: t, userAvatarUrl, allAgents, ownerIdentity } = useApp();
+  const boundAgentCount = allAgents.filter(a => a.ownerDelegationRecord).length;
+
+  const panelRef = useModalA11y<HTMLDivElement>({ isOpen, onClose });
 
   if (!isOpen) return null;
 
@@ -32,10 +36,15 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         onClick={onClose}
       >
         <motion.div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-modal-title"
+          tabIndex={-1}
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="w-full max-w-2xl rounded-3xl overflow-hidden"
+          className="w-full max-w-2xl rounded-3xl overflow-hidden focus:outline-none"
           style={{
             background: t.surface1,
             border: `1px solid ${t.border}`,
@@ -45,8 +54,10 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         >
           {/* Header/Banner */}
           <div className="h-32 w-full relative" style={{ background: `linear-gradient(135deg, ${t.accent}40, ${t.surface3})` }}>
-            <button 
+            <button
+              type="button"
               onClick={onClose}
+              aria-label="Close profile"
               className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center bg-black/20 text-white hover:bg-black/40 transition-colors"
             >
               <X size={16} />
@@ -55,7 +66,7 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
           <div className="px-8 pb-8 -mt-12 relative">
             {/* Avatar */}
-            <div 
+            <div
               className="w-24 h-24 rounded-3xl overflow-hidden border-4 flex items-center justify-center shadow-xl mb-6"
               style={{ borderColor: t.surface1, background: t.surface2 }}
             >
@@ -69,7 +80,7 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             <div className="flex flex-col md:flex-row gap-8">
               {/* Left Side: Info */}
               <div className="flex-1">
-                <h2 className="text-2xl font-bold mb-1" style={{ color: t.text }}>Ryan</h2>
+                <h2 id="profile-modal-title" className="text-2xl font-bold mb-1" style={{ color: t.text }}>Ryan</h2>
                 <div className="flex items-center gap-2 text-xs mb-6" style={{ color: t.textMuted }}>
                   <Mail size={12} />
                   <span>ryan@01ai.ai</span>
@@ -90,7 +101,7 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                   ))}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 mb-6">
                   <div className="text-[10px] uppercase tracking-wider mb-2 opacity-50" style={{ color: t.text }}>Active Sessions</div>
                   <div className="p-3 rounded-xl flex items-center justify-between text-xs" style={{ background: t.surface2 }}>
                     <div className="flex items-center gap-3">
@@ -99,6 +110,28 @@ export function ProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                     </div>
                     <span style={{ color: t.textMuted }}>Live Now</span>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-wider mb-2 opacity-50" style={{ color: t.text }}>01Protocol Identity</div>
+                  {ownerIdentity ? (
+                    <div className="p-3 rounded-xl text-xs" style={{ background: t.surface2, border: `1px solid ${t.border}` }}>
+                      <div className="flex items-center gap-2 mb-1.5" style={{ color: t.text }}>
+                        <KeyRound size={12} style={{ color: t.accent }} />
+                        <span>Owner identity active</span>
+                      </div>
+                      <div className="font-mono text-[10px] mb-1.5 break-all" style={{ color: t.textMuted }}>
+                        {ownerIdentity.identity.instanceId}
+                      </div>
+                      <div style={{ color: t.textMuted }}>
+                        {boundAgentCount} agent{boundAgentCount !== 1 ? 's' : ''} delegation-bound to this identity
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl text-xs" style={{ background: t.surface2, border: `1px solid ${t.border}`, color: t.textMuted }}>
+                      No owner identity yet — one is created automatically the first time you create an agent, and every agent you create afterward is bound to it.
+                    </div>
+                  )}
                 </div>
               </div>
 

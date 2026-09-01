@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "01deck-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:deck"],
+      "port": 4173
+    },
+    {
+      "name": "01foundry-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:foundry"],
+      "port": 4174
+    }
+  ]
+}

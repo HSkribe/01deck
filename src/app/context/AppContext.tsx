@@ -1,13 +1,33 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Agent, agents as initialAgents } from '../data/agents';
 import { appPluginDefaults } from '../plugins/registry';
-import { backendApi, type BackendSessionStatus } from '../services/backendApi';
+import { backendApi, BackendUnreachableError, type BackendSessionStatus } from '../services/backendApi';
+import { getActiveApiKey, generateAgentCompletion } from '../services/llmClient';
 import { DEFAULT_PAGE_CONTEXT, DEFAULT_WORKSPACE_SECTION } from '../utils/productMode';
-import { appendConversationMemory, ensureAgentMemoryVault, getAgentMemoryContext } from '../services/memoryVault';
+import { appendConversationMemory, deleteAgentMemoryVault, ensureAgentMemoryVault, getAgentMemoryContext } from '../services/memoryVault';
+import { enrollOwnerIdentity, type OwnerIdentityState } from '../utils/protocol';
 
 export type ThemeId = 'core' | 'midnight' | 'holo' | 'clean' | 'solar';
 export type WorkspaceSectionId = 'foundry' | 'deck' | 'deploy' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
-export type AppPluginId = '01foundry-agent-optimization' | '01evolve-experience';
+export type AppPluginId = '01foundry-agent-optimization' | '01evolve-experience' | '01maestro';
+
+// Backend connectivity, kept distinct from auth: a network failure reaching
+// the backend at all ('unreachable') is a different problem — and needs a
+// different message — than reaching it and finding out you need to sign in
+// ('auth-required'). See backendApi.checkHealth / AppContext's
+// syncBackendSession.
+export type BackendStatus =
+  | 'checking'
+  | 'unreachable'
+  | 'auth-required'
+  | 'ready'
+  | 'not-configured' // backend reachable, but auth disabled server-side
+  | 'error'; // backend reachable, but a request to it failed unexpectedly
+
+// What will actually happen the next time a chat message is sent — the
+// thing ChatWindow shows the user so "local" replies are never presented
+// as if they came from a live model.
+export type ChatResponseSource = 'local' | 'direct-key' | 'backend';
 
 export interface ThemeConfig {
   id: ThemeId;
@@ -346,6 +366,9 @@ interface AppContextType {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   addAgent: (agent: Agent) => void;
+  removeAgent: (agentId: string) => void;
+  ownerIdentity: OwnerIdentityState | null;
+  ensureOwnerIdentity: (displayName?: string) => OwnerIdentityState;
 
   // Card modal
   activeAgent: Agent | null;
@@ -362,8 +385,9 @@ interface AppContextType {
   sendMessage: (content: string) => void;
   llmModel: string;
   setLlmModel: (value: string) => void;
-  backendSessionStatus: 'checking' | 'authenticated' | 'unauthenticated';
-  backendAuthEnabled: boolean;
+  backendStatus: BackendStatus;
+  chatResponseSource: ChatResponseSource;
+  refreshBackendStatus: () => Promise<void>;
   authenticateBackend: (token: string) => Promise<boolean>;
   logoutBackend: () => Promise<void>;
   isChatStreaming: boolean;
@@ -391,8 +415,6 @@ interface AppContextType {
   setShowCreateImport: (v: boolean) => void;
 
   // Maestro
-  maestroEnabled: boolean;
-  setMaestroEnabled: (v: boolean) => void;
   maestroOpen: boolean;
   setMaestroOpen: (v: boolean) => void;
   vstAgents: Agent[];
@@ -426,6 +448,7 @@ const STORAGE_KEYS = {
   densityMode: '01deck:density-mode',
   userAvatarUrl: '01deck:user-avatar-url',
   pluginStates: '01deck:plugin-states',
+  ownerIdentity: '01deck:owner-identity',
 };
 
 function readStoredTheme(): ThemeId {
@@ -478,6 +501,23 @@ function readStoredUserAvatarUrl(): string | null {
   return window.localStorage.getItem(STORAGE_KEYS.userAvatarUrl);
 }
 
+// The owner identity's private key is persisted alongside its public
+// identity, the same tradeoff already made for agent identities in this app
+// (see src/app/utils/protocol.ts / userAgents below) — everything here is
+// local-only, client-side state with no server round-trip, so it sits in the
+// same trust boundary as the rest of localStorage.
+function readStoredOwnerIdentity(): OwnerIdentityState | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(STORAGE_KEYS.ownerIdentity);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as OwnerIdentityState;
+    return parsed?.identity && parsed?.privateKeyHex ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function readStoredAgents(): Agent[] {
   if (typeof window === 'undefined') return [];
   const raw = window.localStorage.getItem(STORAGE_KEYS.userAgents);
@@ -515,8 +555,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatMemoryContext, setChatMemoryContext] = useState('');
   const [llmModel, setLlmModel] = useState('gpt-4.1-mini');
-  const [backendSessionStatus, setBackendSessionStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
-  const [backendAuthEnabled, setBackendAuthEnabled] = useState(true);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [isArcadeOpen, setIsArcadeOpen] = useState(false);
@@ -525,7 +564,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showCreator, setShowCreator] = useState(false);
   const [showAgentImport, setShowAgentImport] = useState(false);
   const [showCreateImport, setShowCreateImport] = useState(false);
-  const [maestroEnabled, setMaestroEnabled] = useState(false);
   const [maestroOpen, setMaestroOpen] = useState(false);
   const [vstAgents, setVstAgents] = useState<Agent[]>([]);
   const [iconPack, setIconPack] = useState<IconPackId>('classic');
@@ -559,6 +597,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ]);
   const [tradeProposals, setTradeProposals] = useState<TradeProposal[]>([]);
   const [userAgents, setUserAgents] = useState<Agent[]>(readStoredAgents);
+  const [ownerIdentity, setOwnerIdentity] = useState<OwnerIdentityState | null>(readStoredOwnerIdentity);
 
   const setThemeId = useCallback((id: ThemeId) => {
     setCurrentThemeId(id);
@@ -571,6 +610,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addAgent = useCallback((agent: Agent) => {
     setUserAgents(prev => [agent, ...prev.filter(existing => existing.id !== agent.id)]);
   }, []);
+
+  // Lazily enrolls the one-per-installation 01Protocol owner identity the
+  // first time it's needed — i.e. the first time a user creates an agent.
+  // Every agent created afterward is delegation-bound to this identity; see
+  // AgentCreatorModal's buildAgent, which calls this before binding.
+  const ensureOwnerIdentity = useCallback((displayName?: string): OwnerIdentityState => {
+    if (ownerIdentity) return ownerIdentity;
+    const enrolled = enrollOwnerIdentity(displayName?.trim() || 'Owner');
+    setOwnerIdentity(enrolled);
+    return enrolled;
+  }, [ownerIdentity]);
 
   const setPluginEnabled = useCallback((pluginId: AppPluginId, enabled: boolean) => {
     setPluginStates(prev => ({ ...prev, [pluginId]: enabled }));
@@ -668,6 +718,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const removeAgent = useCallback((agentId: string) => {
+    setUserAgents(prev => {
+      const exists = prev.some(agent => agent.id === agentId);
+      if (!exists) return prev;
+      return prev.filter(agent => agent.id !== agentId);
+    });
+
+    setVstAgents(prev => prev.filter(agent => agent.id !== agentId));
+
+    if (activeAgent?.id === agentId) {
+      setActiveAgent(null);
+      setIsCardVisible(false);
+    }
+
+    if (chatAgent?.id === agentId) {
+      setChatAgent(null);
+    }
+
+    deleteAgentMemoryVault(agentId);
+  }, [activeAgent, chatAgent, setChatAgent]);
+
   const sendMessage = useCallback((content: string) => {
     if (!chatAgent) return;
 
@@ -709,14 +780,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 800 + Math.random() * 600);
   }, [chatAgent]);
 
+  // Checks reachability first (via /healthz) and only then asks about auth,
+  // so "the backend process isn't running" and "the backend is up but you
+  // haven't signed in" produce different, honest states instead of both
+  // collapsing into a generic "unauthenticated" — see the BackendStatus
+  // type above for what each state means.
   const syncBackendSession = useCallback(async () => {
+    setBackendStatus('checking');
+    try {
+      await backendApi.checkHealth();
+    } catch (error) {
+      if (error instanceof BackendUnreachableError) {
+        setBackendStatus('unreachable');
+        return;
+      }
+      setBackendStatus('error');
+      return;
+    }
+
     try {
       const status: BackendSessionStatus = await backendApi.getSessionStatus();
-      setBackendAuthEnabled(status.enabled);
-      setBackendSessionStatus(status.authenticated ? 'authenticated' : 'unauthenticated');
+      if (!status.enabled) {
+        setBackendStatus('not-configured');
+      } else if (status.authenticated) {
+        setBackendStatus('ready');
+      } else {
+        setBackendStatus('auth-required');
+      }
     } catch {
-      setBackendAuthEnabled(true);
-      setBackendSessionStatus('unauthenticated');
+      setBackendStatus('error');
     }
   }, []);
 
@@ -727,11 +819,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const authenticateBackend = useCallback(async (token: string) => {
     try {
       const status = await backendApi.createSession(token.trim());
-      setBackendAuthEnabled(status.enabled);
-      setBackendSessionStatus(status.authenticated ? 'authenticated' : 'unauthenticated');
+      if (!status.enabled) {
+        setBackendStatus('not-configured');
+      } else if (status.authenticated) {
+        setBackendStatus('ready');
+      } else {
+        setBackendStatus('auth-required');
+      }
       return status.authenticated;
-    } catch {
-      setBackendSessionStatus('unauthenticated');
+    } catch (error) {
+      setBackendStatus(error instanceof BackendUnreachableError ? 'unreachable' : 'error');
       return false;
     }
   }, []);
@@ -740,7 +837,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       await backendApi.clearSession();
     } finally {
-      setBackendSessionStatus('unauthenticated');
+      setBackendStatus('auth-required');
     }
   }, []);
 
@@ -759,7 +856,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const agentMessageId = `a-${Date.now()}`;
 
-    if (backendSessionStatus !== 'authenticated') {
+    const activeKeyInfo = getActiveApiKey();
+    const hasLiveLlm = Boolean(activeKeyInfo || backendStatus === 'ready');
+
+    if (!hasLiveLlm) {
       setTimeout(() => {
         const agentMsg: ChatMessage = {
           id: agentMessageId,
@@ -789,32 +889,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const systemPrompt = [
-          `You are ${chatAgent.name}, a ${chatAgent.role}.`,
+          `You are ${chatAgent.name}, an autonomous AI agent operating under 01 Protocol (${chatAgent.protocolId || 'v3.0'}).`,
+          `Role: ${chatAgent.role}.`,
           `Specialization: ${chatAgent.specialization}.`,
           `Description: ${chatAgent.description}.`,
-          chatAgent.goal ? `Current directive: ${chatAgent.goal}.` : '',
-          chatMemoryContext ? `Persistent memory summary: ${chatMemoryContext}` : '',
-          `Tone: warm, capable, concise, and conversational. Do not repeat your role unless it directly matters.`,
-          `Behavior: answer the user's question first, keep the response natural, and avoid sounding like a status readout.`,
+          chatAgent.goal ? `Primary Directive / Goal: ${chatAgent.goal}.` : '',
+          chatMemoryContext ? `Persistent Memory Summary: ${chatMemoryContext}` : '',
+          `Tone & Style: Speak authentically as yourself (${chatAgent.name}). Be intelligent, engaging, direct, and helpful.`,
+          `Behavior: Answer questions in character, maintain your individual perspective, and embody your 01 Protocol identity.`,
           chatAgent.tools.length > 0 ? `Available capabilities: ${chatAgent.tools.join(', ')}.` : '',
         ]
           .filter(Boolean)
           .join(' ');
 
-        const response = await backendApi.chatCompletion({
-          model: llmModel.trim() || 'gpt-4.1-mini',
-          temperature: 0.8,
-          max_tokens: 512,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...historyWithUser.map(message => ({
-              role: message.role === 'agent' ? 'assistant' as const : 'user' as const,
-              content: message.content,
-            })),
-          ],
-        });
+        let finalText = '';
 
-        const finalText = response.text;
+        if (activeKeyInfo) {
+          // Direct API key inference
+          finalText = await generateAgentCompletion({
+            provider: activeKeyInfo.provider,
+            apiKey: activeKeyInfo.key,
+            systemPrompt,
+            messages: historyWithUser.map(m => ({
+              role: m.role === 'agent' ? ('assistant' as const) : ('user' as const),
+              content: m.content,
+            })),
+          });
+        } else {
+          // Backend API authentication
+          const response = await backendApi.chatCompletion({
+            model: llmModel.trim() || 'gpt-4.1-mini',
+            temperature: 0.8,
+            max_tokens: 512,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...historyWithUser.map(message => ({
+                role: message.role === 'agent' ? ('assistant' as const) : ('user' as const),
+                content: message.content,
+              })),
+            ],
+          });
+          finalText = response.text;
+        }
+
         for (const token of finalText.split(/(\s+)/)) {
           if (!token) continue;
           setChatMessages(prev =>
@@ -824,7 +941,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 : message,
             ),
           );
-          // Slow the reveal slightly so streamed responses still feel live.
           // eslint-disable-next-line no-await-in-loop
           await new Promise(resolve => window.setTimeout(resolve, 15));
         }
@@ -841,7 +957,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           { role: 'agent', content: finalText || 'No response returned.' },
         ]).then(() => getAgentMemoryContext(chatAgent.id).then(setChatMemoryContext));
       } catch (error) {
-        const fallbackContent = `The model request failed, so I fell back to local guidance. ${buildAgentReply(chatAgent, content, historyWithUser)} (${error instanceof Error ? error.message : 'Unknown error'})`;
+        const fallbackContent = `[Live LLM Fallback] ${buildAgentReply(chatAgent, content, historyWithUser)} (${error instanceof Error ? error.message : 'Unknown error'})`;
         setChatMessages(prev =>
           prev.map(message =>
             message.id === agentMessageId
@@ -860,7 +976,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsChatStreaming(false);
       }
     })();
-  }, [backendSessionStatus, chatAgent, chatMemoryContext, chatMessages, llmModel]);
+  }, [backendStatus, chatAgent, chatMemoryContext, chatMessages, llmModel]);
+
+  // What the next chat message will actually use — shown in ChatWindow so a
+  // simulated reply is never presented as if it came from a live model.
+  const chatResponseSource: ChatResponseSource = getActiveApiKey()
+    ? 'direct-key'
+    : backendStatus === 'ready'
+      ? 'backend'
+      : 'local';
 
   // Merge user-created agents with initial agents, then filter
   const allAgents = [...userAgents, ...initialAgents];
@@ -909,6 +1033,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(STORAGE_KEYS.userAgents, JSON.stringify(userAgents));
   }, [userAgents]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (ownerIdentity) {
+      window.localStorage.setItem(STORAGE_KEYS.ownerIdentity, JSON.stringify(ownerIdentity));
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.ownerIdentity);
+    }
+  }, [ownerIdentity]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -962,6 +1095,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         searchQuery,
         setSearchQuery,
         addAgent,
+        removeAgent,
+        ownerIdentity,
+        ensureOwnerIdentity,
         activeAgent,
         setActiveAgent,
         isCardVisible,
@@ -974,8 +1110,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sendMessage: conversationalSendMessage,
         llmModel,
         setLlmModel,
-        backendSessionStatus,
-        backendAuthEnabled,
+        backendStatus,
+        chatResponseSource,
+        refreshBackendStatus: syncBackendSession,
         authenticateBackend,
         logoutBackend,
         isChatStreaming,
@@ -993,8 +1130,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setShowAgentImport,
         showCreateImport,
         setShowCreateImport,
-        maestroEnabled,
-        setMaestroEnabled,
         maestroOpen,
         setMaestroOpen,
         vstAgents,

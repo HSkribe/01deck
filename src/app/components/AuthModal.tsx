@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 type Tab = 'signin' | 'signup';
 
@@ -130,6 +131,16 @@ export function AuthModal() {
   // ---- Shared show-error logic ----
   const showErr = (f: FieldState) => f.touched || submitAttempted;
 
+  // This overlay is a mandatory gate (there's no route or content behind it
+  // to return to), so it never closes on Escape — but it still needs dialog
+  // semantics, a focus trap (nothing behind it should be tab-reachable),
+  // and initial focus so keyboard/screen-reader users land inside it.
+  const panelRef = useModalA11y<HTMLDivElement>({
+    isOpen: true,
+    closeOnEscape: false,
+    initialFocusSelector: 'input',
+  });
+
   return (
     <div
       style={{
@@ -144,6 +155,11 @@ export function AuthModal() {
       }}
     >
       <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="01Deck sign in"
+        tabIndex={-1}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2 }}
@@ -155,6 +171,7 @@ export function AuthModal() {
           borderRadius: 24,
           padding: 32,
           boxSizing: 'border-box',
+          outline: 'none',
         }}
       >
         {/* Header */}
@@ -177,6 +194,8 @@ export function AuthModal() {
 
         {/* Tabs */}
         <div
+          role="tablist"
+          aria-label="Sign in or create account"
           style={{
             display: 'flex',
             gap: 24,
@@ -187,6 +206,9 @@ export function AuthModal() {
           {(['signin', 'signup'] as Tab[]).map(t => (
             <button
               key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => switchTab(t)}
               style={{
                 background: 'none',
@@ -362,7 +384,9 @@ export function AuthModal() {
         {/* Guest link */}
         <div style={{ textAlign: 'center', marginTop: 20 }}>
           <button
+            type="button"
             onClick={handleGuest}
+            aria-label="Continue without an account as a guest"
             style={{
               background: 'none',
               border: 'none',

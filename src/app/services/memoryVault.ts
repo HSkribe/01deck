@@ -112,3 +112,11 @@ export async function getAgentMemoryContext(agentId: string): Promise<string> {
   if (!vault) return 'No persistent memory yet.';
   return summarizeEntries(vault.entries);
 }
+
+export function deleteAgentMemoryVault(agentId: string): void {
+  const vaults = readVaults();
+  if (!vaults[agentId]) return;
+
+  delete vaults[agentId];
+  writeVaults(vaults);
+}

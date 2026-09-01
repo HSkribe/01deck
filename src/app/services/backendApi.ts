@@ -26,6 +26,19 @@ export interface BackendSessionStatus {
   authenticated: boolean;
 }
 
+/**
+ * A network-level failure (backend not running, DNS/CORS failure, offline)
+ * vs. an HTTP-level failure (backend is up but returned an error). Callers
+ * use this to tell "backend unreachable" apart from "backend reachable but
+ * something's wrong with this request" — see AppContext's syncBackendSession.
+ */
+export class BackendUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Backend unreachable');
+    this.name = 'BackendUnreachableError';
+  }
+}
+
 export interface BackendChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -38,6 +51,24 @@ export interface BackendChatResponse {
 
 export const backendApi = {
   baseUrl: API_BASE,
+
+  /**
+   * Hits /healthz to answer one question: is the backend process reachable
+   * at all? Resolves true/false for an actual HTTP response (even a 5xx —
+   * that still means something is listening); throws BackendUnreachableError
+   * only when the request itself couldn't be made (network/DNS/CORS/offline
+   * — i.e. nothing is listening at API_BASE). Callers use this to show
+   * "backend unreachable" instead of misreporting a down backend as
+   * "sign-in required".
+   */
+  async checkHealth(): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE}/healthz`, { method: 'GET' });
+      return response.ok;
+    } catch (error) {
+      throw new BackendUnreachableError(error);
+    }
+  },
 
   getSessionStatus(): Promise<BackendSessionStatus> {
     return backendFetch<BackendSessionStatus>('/auth/session');

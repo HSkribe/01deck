@@ -1,0 +1,65 @@
+# 01Deck
+
+> 01Deck is an agent workspace for 01Protocol identities: create, verify, and chat with
+> AI agents that carry cryptographically signed 01Protocol identity records.
+
+01Deck is a client-side single-page application (SPA). Content on this site is rendered by
+JavaScript after page load; a crawler that does not execute JavaScript will see only the
+shell in index.html. The machine-readable agent catalog at /agents.json is provided as a
+static alternative for indexing the built-in agent roster.
+
+## Product modes
+
+01Deck ships in two product profiles, selected at build time via VITE_PRODUCT_PROFILE:
+
+- Deck (default) — the general agent workspace: browse, create, and chat with agents.
+- Foundry — a focused profile for customer-support agent optimization.
+
+Both modes share the same underlying agent, identity, and chat infrastructure described below.
+
+## Agents
+
+01Deck ships with a roster of pre-built seed agents, each with a name, role, category,
+description, and a 01Protocol identity (protocolId). The full roster is available as
+structured data at /agents.json. Users can also create custom agents through the in-app
+agent creator.
+
+## 01Protocol identity
+
+Every agent created in 01Deck is issued a 01Protocol identity (an Ed25519 keypair and
+signed identity record) via the vendored @01protocol/sdk. On first agent creation, the
+installation also enrolls a local "owner" identity, and each agent's identity is bound to
+that owner via a signed delegation token. Identity and delegation material is stored in the
+browser's local storage for that installation; it is not synced to a server.
+
+## Exporting and deploying agents
+
+- Download Archive (.zip) — a real, working export. Produces a .zip containing the agent's
+  signed 01Protocol identity files (.01ai / .01bundle), portrait, and memory/log folder
+  scaffolding, saved directly to the user's device via the browser's download mechanism.
+- Local Quick Deploy — a planned feature for a future desktop/backend build that would write
+  agent files directly to a local directory (e.g. ~/.01protocol). It is not implemented in
+  the current browser build and is shown disabled with that explanation. Use Download
+  Archive to get an agent's files today.
+
+## Chat
+
+01Deck's chat can run in one of three modes, and the interface labels which one is active
+(Live vs Simulated) rather than presenting simulated output as if it were a live model:
+
+- Direct provider key — the user supplies their own API key client-side; requests go
+  straight to that provider.
+- Backend — the app talks to a companion backend service (01Evolve) for auth/session
+  management and model access, when one is configured and reachable.
+- Local/simulated fallback — when no key and no reachable authenticated backend are
+  available, chat falls back to local canned/simulated responses so the UI remains usable
+  for exploration, and is labeled "Simulated" accordingly.
+
+See the "Chat Backend Configuration" section of the project README for the environment
+variables that enable the backend mode.
+
+## Links
+
+- Agent catalog (machine-readable): /agents.json
+- Sitemap: /sitemap.xml
+- Source and configuration docs: see the project README

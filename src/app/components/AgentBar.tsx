@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useDrag } from 'react-dnd';
-import { Clock, Dna, MessageSquare, Play, ShieldCheck, Sparkles } from 'lucide-react';
+import { Clock, Dna, MessageSquare, Play, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { Agent, rarityConfig } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
 import { useApp } from '../context/AppContext';
@@ -22,22 +22,34 @@ function formatLastUsed(date: Date): string {
   return `${days}d ago`;
 }
 
-export function AgentBar({ agent, index }: AgentBarProps) {
-  const { currentTheme: t, densityMode, setActiveAgent, setIsCardVisible, setChatAgent, setShowEvolutionLab, isPluginEnabled, maestroEnabled, addToVST } = useApp();
+// forwardRef because AgentBar is rendered directly inside an
+// <AnimatePresence mode="popLayout"> in AgentList.tsx — popLayout needs a
+// real DOM ref on each item to measure it during exit animations. Without
+// forwardRef, React/Framer Motion try to attach that ref to this function
+// component and log "Function components cannot be given refs". The ref
+// itself is merged with react-dnd's `drag` ref below, since both need the
+// same root node.
+export const AgentBar = React.forwardRef<HTMLDivElement, AgentBarProps>(function AgentBar(
+  { agent, index },
+  forwardedRef,
+) {
+  const { currentTheme: t, densityMode, setActiveAgent, setIsCardVisible, setChatAgent, setShowEvolutionLab, isPluginEnabled, addToVST, removeAgent } = useApp();
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickRef = useRef(false);
   const [isHeld, setIsHeld] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
 
   const config = rarityConfig[agent.rarity];
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
+  const maestroPluginEnabled = isPluginEnabled('01maestro');
 
   const [{ isDragging }, drag] = useDrag({
     type: 'AGENT',
     item: { agent },
     end: (_item, monitor) => {
-      if (maestroEnabled && monitor.didDrop()) {
+      if (maestroPluginEnabled && monitor.didDrop()) {
         addToVST(agent);
       }
     },
@@ -45,6 +57,18 @@ export function AgentBar({ agent, index }: AgentBarProps) {
       isDragging: monitor.isDragging(),
     }),
   });
+
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      drag(node);
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(node);
+      } else if (forwardedRef) {
+        (forwardedRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }
+    },
+    [drag, forwardedRef],
+  );
 
   const handleMouseDown = () => {
     holdTimerRef.current = setTimeout(() => {
@@ -71,6 +95,34 @@ export function AgentBar({ agent, index }: AgentBarProps) {
     setIsCardVisible(true);
   };
 
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return; // let buttons inside handle their own keys
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setActiveAgent(agent);
+      setIsCardVisible(true);
+    }
+  };
+
+  // Drag-and-drop (react-dnd) is pointer-only by nature — there's no
+  // keyboard equivalent for "drag this onto the VST rack". The Chat button
+  // below is the keyboard-reachable equivalent for starting a conversation
+  // without dragging; it's kept visible whenever the row is hovered OR
+  // focused (not hover-only) so Tab users can reach it.
+  const showRowActions = isHovered || isFocused;
+
+  const handleDeleteAgent = (event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    handleMouseUp();
+
+    if (!agent.isUserCreated) return;
+
+    const shouldDelete = window.confirm(`Delete ${agent.name} from your agent library? This removes its local memory and saved copy from this device.`);
+    if (!shouldDelete) return;
+
+    removeAgent(agent.id);
+  };
+
   const isRare = agent.rarity === 'rare' || agent.rarity === 'epic' || agent.rarity === 'legend' || agent.rarity === 'mythic';
 
   useEffect(() => {
@@ -92,7 +144,7 @@ export function AgentBar({ agent, index }: AgentBarProps) {
 
   return (
     <motion.div
-      ref={drag as unknown as React.Ref<HTMLDivElement>}
+      ref={setRefs}
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: isDragging ? 0.4 : 1, x: 0 }}
       transition={{ delay: index * 0.04, duration: 0.3, ease: 'easeOut' }}
@@ -100,7 +152,17 @@ export function AgentBar({ agent, index }: AgentBarProps) {
       onMouseLeave={() => { setIsHovered(false); handleMouseUp(); }}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
-      className="relative flex items-center rounded-xl cursor-grab active:cursor-grabbing select-none overflow-hidden"
+      onFocus={() => setIsFocused(true)}
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsFocused(false);
+        }
+      }}
+      onKeyDown={handleRowKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`${agent.name}, ${agent.role}. Press Enter to view this agent's card.`}
+      className="relative flex items-center rounded-xl cursor-grab active:cursor-grabbing select-none overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
       style={{
         paddingLeft: density.paddingX,
         paddingRight: density.paddingX,
@@ -114,12 +176,13 @@ export function AgentBar({ agent, index }: AgentBarProps) {
           : t.surface1,
         border: `1px solid ${isHovered ? (isRare ? config.borderColor : t.border) : t.border}`,
         boxShadow: isHovered ? `0 4px 24px ${config.glowColor}, 0 0 0 1px ${config.borderColor}22` : 'none',
+        outlineColor: config.borderColor,
         transition: 'all 0.2s ease',
         opacity: isDragging ? 0.5 : 1,
       }}
       whileTap={{ scale: 0.99 }}
       onClick={handleClick}
-      title="Click to view card • Hold to expand • Drag to chat"
+      title="Click to view card • Hold to expand • Drag to chat • Enter/Space to view"
     >
       {/* Shimmer overlay on hover */}
       {isHovered && (
@@ -175,7 +238,7 @@ export function AgentBar({ agent, index }: AgentBarProps) {
         ) : (
           <img
             src={agent.portrait}
-            alt={agent.name}
+            alt=""
             className="w-full h-full object-cover"
             onError={() => setImageFailed(true)}
           />
@@ -271,15 +334,19 @@ export function AgentBar({ agent, index }: AgentBarProps) {
         <RarityBadge rarity={agent.rarity} rarityCount={agent.rarityCount} size="sm" />
       </div>
 
-      {/* Action buttons on hover */}
-      {isHovered && (
+      {/* Action buttons — visible on hover AND on keyboard focus, so Tab
+          users (and the row's own aria-label) have a non-drag way to reach
+          every action a mouse user gets via hover + drag. */}
+      {showRowActions && (
         <motion.div
           initial={{ opacity: 0, x: 10 }}
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-1.5 ml-2"
         >
           <motion.button
+            type="button"
             onClick={e => { e.stopPropagation(); setChatAgent(agent); }}
+            aria-label={`Chat with ${agent.name}`}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
             style={{
               background: `${t.accent}15`,
@@ -293,7 +360,9 @@ export function AgentBar({ agent, index }: AgentBarProps) {
             <span>Chat</span>
           </motion.button>
           <motion.button
+            type="button"
             onClick={e => { e.stopPropagation(); setActiveAgent(agent); setIsCardVisible(true); }}
+            aria-label={`View ${agent.name}'s card`}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
             style={{
               background: `${config.color}18`,
@@ -308,7 +377,9 @@ export function AgentBar({ agent, index }: AgentBarProps) {
           </motion.button>
           {evolutionPluginEnabled && agent.hasEvolution ? (
             <motion.button
+              type="button"
               onClick={e => { e.stopPropagation(); setShowEvolutionLab(true); }}
+              aria-label={`Open Evolution Lab for ${agent.name}`}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
               style={{
                 background: 'rgba(16,185,129,0.14)',
@@ -322,8 +393,27 @@ export function AgentBar({ agent, index }: AgentBarProps) {
               <span>Evolve</span>
             </motion.button>
           ) : null}
+          {agent.isUserCreated ? (
+            <motion.button
+              type="button"
+              onClick={handleDeleteAgent}
+              aria-label={`Delete ${agent.name}`}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+              style={{
+                background: 'rgba(239,68,68,0.12)',
+                border: '1px solid rgba(239,68,68,0.28)',
+                color: '#f87171',
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              title="Delete this user-created agent"
+            >
+              <Trash2 size={11} />
+              <span>Delete</span>
+            </motion.button>
+          ) : null}
         </motion.div>
       )}
     </motion.div>
   );
-}
+});

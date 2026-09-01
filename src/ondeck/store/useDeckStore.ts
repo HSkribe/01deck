@@ -3,24 +3,34 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { AGENT_TEMPLATES } from '../templates';
 import {
-  computeStateHash,
   decryptText,
   deriveAesKeyFromPassphrase,
   encryptText,
   generateAesKey,
-  generateAgentIdentity,
   sha256Hex,
-  signPayload,
-  verifyAgentSignature,
-  verifyPayload,
 } from '../lib/crypto';
+import {
+  bindAgentToOwner,
+  enrollIdentity,
+  enrollOwnerIdentity,
+  evolveIdentity,
+  signAsAgent,
+  verifyIdentity,
+  verifyOwnerBinding,
+} from '../lib/protocol';
 import { streamChatCompletion } from '../lib/llm';
 import { executeTool } from '../lib/tools';
-import type { AgentEdge, AgentMessage, AgentModel, AgentNode, AgentTemplate, ExportedAgent, MemoryEntry, ToolName } from '../types';
-
-type PersistedAgent = Omit<AgentModel, 'private_key' | 'encryption_key' | 'memory'> & {
-  memory: AgentMessage[];
-};
+import type {
+  AgentEdge,
+  AgentMessage,
+  AgentModel,
+  AgentNode,
+  AgentTemplate,
+  ExportedAgent,
+  MemoryEntry,
+  OwnerIdentityState,
+  ToolName,
+} from '../types';
 
 type DeckState = {
   agents: Record<string, AgentModel>;
@@ -29,18 +39,27 @@ type DeckState = {
   selectedAgentId: string | null;
   apiBaseUrl: string;
   apiKey: string;
+  owner: OwnerIdentityState | null;
   streamingByAgent: Record<string, boolean>;
   streamingTextByAgent: Record<string, string>;
   errorByAgent: Record<string, string | null>;
+  workbenchError: string | null;
   selectAgent: (agentId: string | null) => void;
   setApiBaseUrl: (value: string) => void;
   setApiKey: (value: string) => void;
-  createAgentFromTemplate: (templateId: string, position: { x: number; y: number }) => Promise<void>;
+  ensureOwnerIdentity: (displayName?: string) => Promise<OwnerIdentityState>;
+  createAgentFromTemplate: (
+    templateId: string,
+    position: { x: number; y: number },
+  ) => Promise<{ ok: boolean; message?: string }>;
   deleteAgent: (agentId: string) => void;
   onNodesChange: (changes: NodeChange<AgentNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<AgentEdge>[]) => void;
   onConnect: (connection: Connection) => void;
-  updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentModel, 'name' | 'system_prompt' | 'model' | 'temperature'>>) => Promise<void>;
+  updateAgentConfig: (
+    agentId: string,
+    patch: Partial<Pick<AgentModel, 'name' | 'system_prompt' | 'model' | 'temperature'>>,
+  ) => Promise<void>;
   regenerateAgentIdentity: (agentId: string) => Promise<void>;
   toggleTrustedAgent: (agentId: string, trustedPublicKey: string) => void;
   toggleToolPermission: (agentId: string, tool: ToolName) => void;
@@ -73,10 +92,27 @@ function createNode(agentId: string, position: { x: number; y: number }): AgentN
   };
 }
 
-function serializeAgentForPersistence(agent: AgentModel): PersistedAgent {
+// Persisted to localStorage as-is, private key included: 01Protocol identity
+// is meant to be stable across sessions (that's the whole point of a portable
+// instanceId), so unlike the old local-only keypair scheme, the key has to
+// survive reload for the owner-delegation chain to stay meaningful. This is a
+// real security tradeoff over the old "never touches disk" stance — see the
+// note in this repo's dev skill / project notes for the passphrase-vault
+// hardening this should get before shipping beyond a local prototype.
+function serializeAgentForPersistence(agent: AgentModel): AgentModel {
   return {
     ...agent,
-    private_key: undefined,
+    memory: [],
+  };
+}
+
+// Portable export DOES strip the private key — an exported agent file is
+// meant to be shareable (or at least survivable if it ends up somewhere
+// unintended), so it only ever carries public identity + config.
+function serializeAgentForExport(agent: AgentModel): ExportedAgent['agent'] {
+  return {
+    ...agent,
+    private_key_hex: undefined,
     encryption_key: undefined,
     memory: [],
     persistent_memory: agent.persistent_memory.map(entry => ({
@@ -145,10 +181,12 @@ function toOpenAIMessages(agent: AgentModel, memories: string[]): Array<{ role: 
   const systemEnvelope = [
     agent.system_prompt,
     '',
-    'Identity:',
+    'Identity (01Protocol):',
+    `- instance id: ${agent.identity.instanceId}`,
     `- public key: ${agent.public_key.slice(0, 18)}...`,
-    `- state hash: ${agent.state_hash}`,
+    `- integrity checksum: ${agent.identity.integrityChecksum}`,
     `- signature verified: ${agent.signature_verified ? 'yes' : 'no'}`,
+    `- owner-bound: ${agent.owner_delegation ? 'yes' : 'no'}`,
     '',
     `Summary: ${agent.summary || defaultSummary()}`,
     '',
@@ -220,11 +258,32 @@ async function appendPersistentMemoryEntry(agent: AgentModel, content: string): 
   };
 }
 
-async function makeAgent(template: AgentTemplate, position: { x: number; y: number }): Promise<{
-  agent: AgentModel;
-  node: AgentNode;
-}> {
-  const identity = await generateAgentIdentity(template);
+// Every agent's identity, and its binding to the owner, comes from 01Protocol
+// — never a locally-generated keypair. An agent that can't be enrolled and
+// delegated is not created at all; see lib/protocol.ts.
+function makeAgent(
+  template: AgentTemplate,
+  owner: OwnerIdentityState,
+  position: { x: number; y: number },
+): { agent: AgentModel; node: AgentNode } {
+  if (!owner.private_key_hex) {
+    throw new Error('Owner identity has no private key available in this session — cannot bind a new agent to it.');
+  }
+
+  const enrolled = enrollIdentity({
+    name: template.name,
+    role: 'agent',
+    goal: `${template.system_prompt.slice(0, 160)} | 01deck-platform`,
+    includeMemory: true,
+    memoryMode: 'always_on',
+  });
+
+  const owner_delegation = bindAgentToOwner({
+    owner: owner.identity,
+    ownerPrivateKeyHex: owner.private_key_hex,
+    agent: enrolled.agent,
+  });
+
   const agentId = crypto.randomUUID();
   const agent: AgentModel = {
     id: agentId,
@@ -236,21 +295,39 @@ async function makeAgent(template: AgentTemplate, position: { x: number; y: numb
     persistent_memory: [],
     memory_enabled: true,
     summary: defaultSummary(),
-    public_key: identity.public_key,
-    private_key: identity.private_key,
-    state_hash: identity.state_hash,
-    signature: identity.signature,
+    identity: enrolled.agent,
+    private_key_hex: enrolled.privateKeyHex,
+    public_key: enrolled.agent.signerPublicKey,
+    signature_verified: true,
+    needs_private_key: false,
+    owner_delegation,
     trusted_agents: [],
     allowed_tools: [...template.allowed_tools],
     encryption_enabled: false,
-    signature_verified: true,
-    needs_session_rekey: false,
   };
 
   return {
     agent,
     node: createNode(agentId, position),
   };
+}
+
+function resignWithCurrentConfig(agent: AgentModel) {
+  if (!agent.private_key_hex) {
+    throw new Error('This agent has no private key available in this session and cannot be resigned.');
+  }
+
+  return evolveIdentity(agent.identity, agent.private_key_hex, {
+    name: agent.name,
+    platformProfiles: [
+      {
+        platform: '01deck',
+        model: agent.model,
+        temperature: agent.temperature,
+        systemPromptOverride: agent.system_prompt,
+      },
+    ],
+  });
 }
 
 const initialState = {
@@ -260,9 +337,11 @@ const initialState = {
   selectedAgentId: null,
   apiBaseUrl: 'https://api.openai.com/v1',
   apiKey: '',
+  owner: null,
   streamingByAgent: {},
   streamingTextByAgent: {},
   errorByAgent: {},
+  workbenchError: null,
 };
 
 export const useDeckStore = create<DeckState>()(
@@ -274,15 +353,39 @@ export const useDeckStore = create<DeckState>()(
       setApiBaseUrl: value => set({ apiBaseUrl: value }),
       setApiKey: value => set({ apiKey: value }),
 
+      ensureOwnerIdentity: async displayName => {
+        const existing = get().owner;
+        if (existing) return existing;
+
+        const enrolled = enrollOwnerIdentity(displayName?.trim() || 'Owner');
+        const owner: OwnerIdentityState = {
+          identity: enrolled.agent,
+          private_key_hex: enrolled.privateKeyHex,
+        };
+
+        set({ owner });
+        return owner;
+      },
+
       createAgentFromTemplate: async (templateId, position) => {
         const template = AGENT_TEMPLATES.find(item => item.id === templateId) ?? AGENT_TEMPLATES[0];
-        const { agent, node } = await makeAgent(template, position);
 
-        set(state => ({
-          agents: { ...state.agents, [agent.id]: agent },
-          nodes: [...state.nodes, node],
-          selectedAgentId: agent.id,
-        }));
+        try {
+          const owner = await get().ensureOwnerIdentity();
+          const { agent, node } = makeAgent(template, owner, position);
+
+          set(state => ({
+            agents: { ...state.agents, [agent.id]: agent },
+            nodes: [...state.nodes, node],
+            selectedAgentId: agent.id,
+            workbenchError: null,
+          }));
+          return { ok: true };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Could not enroll this agent in 01Protocol.';
+          set({ workbenchError: message });
+          return { ok: false, message };
+        }
       },
 
       deleteAgent: agentId =>
@@ -309,33 +412,28 @@ export const useDeckStore = create<DeckState>()(
         if (!agent) return;
 
         const merged = { ...agent, ...patch };
-        const state_hash = await computeStateHash(merged);
 
-        if (merged.private_key) {
-          const signature = await signPayload(merged.private_key, state_hash);
+        if (!merged.private_key_hex) {
           set(state => ({
             agents: {
               ...state.agents,
-              [agentId]: {
-                ...merged,
-                state_hash,
-                signature,
-                signature_verified: true,
-                needs_session_rekey: false,
-              },
+              [agentId]: { ...merged, signature_verified: false, needs_private_key: true },
             },
           }));
           return;
         }
+
+        const identity = resignWithCurrentConfig(merged);
 
         set(state => ({
           agents: {
             ...state.agents,
             [agentId]: {
               ...merged,
-              state_hash,
-              signature_verified: false,
-              needs_session_rekey: true,
+              identity,
+              public_key: identity.signerPublicKey,
+              signature_verified: true,
+              needs_private_key: false,
             },
           },
         }));
@@ -343,16 +441,19 @@ export const useDeckStore = create<DeckState>()(
 
       regenerateAgentIdentity: async agentId => {
         const agent = get().agents[agentId];
-        if (!agent) return;
-        const identity = await generateAgentIdentity(agent);
+        if (!agent || !agent.private_key_hex) return;
+
+        const identity = resignWithCurrentConfig(agent);
+
         set(state => ({
           agents: {
             ...state.agents,
             [agentId]: {
               ...agent,
-              ...identity,
+              identity,
+              public_key: identity.signerPublicKey,
               signature_verified: true,
-              needs_session_rekey: false,
+              needs_private_key: false,
             },
           },
         }));
@@ -707,11 +808,11 @@ export const useDeckStore = create<DeckState>()(
           return;
         }
 
-        if (!sender.private_key) {
+        if (!sender.private_key_hex) {
           set(state => ({
             errorByAgent: {
               ...state.errorByAgent,
-              [fromAgentId]: 'This agent needs a fresh session identity before it can sign relayed messages.',
+              [fromAgentId]: 'This agent has no private key available in this session and cannot sign relayed messages.',
             },
           }));
           return;
@@ -722,14 +823,16 @@ export const useDeckStore = create<DeckState>()(
           sender.memory.filter(message => message.kind === 'assistant' || message.kind === 'tool').at(-1)?.content ||
           'No recent assistant output was available to relay.';
 
-        const payload = JSON.stringify({
-          fromAgentId,
-          toAgentId,
-          content: fallbackContent,
-          timestamp: new Date().toISOString(),
-        });
-        const signature = await signPayload(sender.private_key, payload);
-        const verified = await verifyPayload(sender.public_key, payload, signature);
+        const signed = signAsAgent(fallbackContent, sender.identity, sender.private_key_hex);
+
+        // The SDK doesn't publicly export a generic verify-arbitrary-signature
+        // function (only whole-identity-record verification) — see the header
+        // comment in lib/protocol.ts. We confirm the sender's identity record
+        // is itself currently valid and that the signed output claims the
+        // sender's current public key, rather than re-deriving Ed25519
+        // verification by hand outside the SDK's supported surface.
+        const senderIdentityCheck = verifyIdentity(sender.identity);
+        const verified = senderIdentityCheck.valid && signed.signerPublicKey === sender.identity.signerPublicKey;
 
         if (!verified) {
           set(state => ({
@@ -746,9 +849,9 @@ export const useDeckStore = create<DeckState>()(
           sender_agent_id: sender.id,
           sender_public_key: sender.public_key,
           content: fallbackContent,
-          timestamp: new Date().toISOString(),
+          timestamp: signed.signedAt,
           kind: 'agent',
-          signature,
+          signature: signed.signature,
           verification_status: 'verified',
         };
 
@@ -781,9 +884,9 @@ export const useDeckStore = create<DeckState>()(
         if (!agent) return null;
 
         const payload: ExportedAgent = {
-          version: 'ondeck-mvp-1',
+          version: 'ondeck-01protocol-1',
           exported_at: new Date().toISOString(),
-          agent: serializeAgentForPersistence(agent),
+          agent: serializeAgentForExport(agent),
         };
 
         return JSON.stringify(payload, null, 2);
@@ -792,24 +895,29 @@ export const useDeckStore = create<DeckState>()(
       importAgent: async (payload, position) => {
         try {
           const parsed = JSON.parse(payload) as ExportedAgent;
-          if (parsed.version !== 'ondeck-mvp-1') {
+          if (parsed.version !== 'ondeck-01protocol-1') {
             return { ok: false, message: 'Unsupported import version.' };
           }
 
-          const valid = await verifyAgentSignature(parsed.agent);
-          if (!valid) {
-            return { ok: false, message: 'Agent signature verification failed during import.' };
+          const identityCheck = verifyIdentity(parsed.agent.identity);
+          if (!identityCheck.valid) {
+            return { ok: false, message: `Agent identity verification failed during import: ${identityCheck.error}` };
           }
+
+          const owner = get().owner;
+          const bindingCheck = owner
+            ? verifyOwnerBinding({ token: parsed.agent.owner_delegation, owner: owner.identity, agent: parsed.agent.identity })
+            : null;
 
           const agentId = crypto.randomUUID();
           const importedAgent: AgentModel = {
             ...parsed.agent,
             id: agentId,
             memory: [],
-            private_key: undefined,
+            private_key_hex: undefined,
             encryption_key: undefined,
-            signature_verified: true,
-            needs_session_rekey: true,
+            signature_verified: identityCheck.valid,
+            needs_private_key: true,
           };
 
           set(state => ({
@@ -821,9 +929,15 @@ export const useDeckStore = create<DeckState>()(
             selectedAgentId: agentId,
           }));
 
+          const bindingNote = owner
+            ? bindingCheck?.valid
+              ? " Its owner delegation matches this installation's owner identity."
+              : " Its owner delegation does NOT match this installation's owner identity — it is bound to a different owner."
+            : '';
+
           return {
             ok: true,
-            message: 'Agent imported and signature verified. Regenerate a session identity to resume signed outbound relays.',
+            message: `Agent imported and identity verified.${bindingNote} It has no private key here, so it can be viewed and trusted but not resigned or used to sign relays.`,
           };
         } catch (error) {
           return {
@@ -834,29 +948,32 @@ export const useDeckStore = create<DeckState>()(
       },
 
       refreshRuntimeState: async () => {
-        const agents = get().agents;
-        const updatedEntries = await Promise.all(
-          Object.entries(agents).map(async ([agentId, agent]) => {
-            const signature_verified = await verifyAgentSignature(agent);
-            return [
-              agentId,
-              {
-                ...agent,
-                signature_verified,
-                needs_session_rekey: !agent.private_key,
-                encryption_key: undefined,
-              },
-            ] as const;
-          }),
-        );
+        const { agents, owner } = get();
+        const ownerCheck = owner ? verifyIdentity(owner.identity) : null;
 
-        set({
-          agents: Object.fromEntries(updatedEntries),
+        const updatedEntries = Object.entries(agents).map(([agentId, agent]) => {
+          const identityCheck = verifyIdentity(agent.identity);
+          const bindingCheck =
+            owner && ownerCheck?.valid
+              ? verifyOwnerBinding({ token: agent.owner_delegation, owner: owner.identity, agent: agent.identity })
+              : null;
+
+          return [
+            agentId,
+            {
+              ...agent,
+              signature_verified: identityCheck.valid && (bindingCheck?.valid ?? false),
+              needs_private_key: !agent.private_key_hex,
+              encryption_key: undefined,
+            },
+          ] as const;
         });
+
+        set({ agents: Object.fromEntries(updatedEntries) });
       },
     }),
     {
-      name: 'ondeck-local-workbench-v2',
+      name: 'ondeck-local-workbench-v3',
       storage: createJSONStorage(() => localStorage),
       partialize: state => ({
         agents: Object.fromEntries(
@@ -866,10 +983,12 @@ export const useDeckStore = create<DeckState>()(
         edges: state.edges,
         selectedAgentId: state.selectedAgentId,
         apiBaseUrl: state.apiBaseUrl,
+        owner: state.owner,
         apiKey: '',
         streamingByAgent: {},
         streamingTextByAgent: {},
         errorByAgent: {},
+        workbenchError: null,
       }),
       onRehydrateStorage: () => state => {
         state?.refreshRuntimeState().catch(() => undefined);

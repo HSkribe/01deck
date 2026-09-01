@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Brain, KeyRound, Lock, RotateCcw, Send, ShieldCheck, ShieldX, Trash2 } from 'lucide-react';
+import { Brain, KeyRound, Lock, RotateCcw, Send, ShieldCheck, ShieldX, Trash2, UserCheck } from 'lucide-react';
 import { TOOL_LABELS } from '../lib/tools';
 import { useDeckStore } from '../store/useDeckStore';
 import type { ToolName } from '../types';
@@ -57,29 +57,37 @@ export function AgentPanel() {
   return (
     <aside className="ondeck-panel-column">
       <div className="ondeck-panel">
-        <div className="ondeck-panel__header">Identity</div>
+        <div className="ondeck-panel__header">Identity (01Protocol)</div>
         <div className="ondeck-identity-row">
           <strong>{agent.name}</strong>
           <span className={`ondeck-mini-tag ${agent.signature_verified ? 'ondeck-mini-tag--green' : 'ondeck-mini-tag--red'}`}>
             {agent.signature_verified ? <ShieldCheck size={12} /> : <ShieldX size={12} />}
-            {agent.signature_verified ? 'signature verified' : 'signature invalid'}
+            {agent.signature_verified ? 'identity + owner binding verified' : 'identity or owner binding invalid'}
           </span>
         </div>
+        <div className="ondeck-code-block">instance: {agent.identity.instanceId}</div>
         <div className="ondeck-code-block">{agent.public_key}</div>
-        <div className="ondeck-code-block">{agent.state_hash}</div>
+        <div className="ondeck-code-block">checksum: {agent.identity.integrityChecksum}</div>
+        <div className="ondeck-identity-row">
+          <span className="ondeck-mini-tag">
+            <UserCheck size={12} />
+            owner: {agent.owner_delegation.delegatorInstanceId.slice(0, 12)}...
+          </span>
+        </div>
         <div className="ondeck-button-row">
-          <button className="ondeck-button" onClick={() => regenerateAgentIdentity(agent.id)}>
+          <button className="ondeck-button" onClick={() => regenerateAgentIdentity(agent.id)} disabled={agent.needs_private_key}>
             <RotateCcw size={14} />
-            Regenerate Identity
+            Re-sign Identity
           </button>
           <button className="ondeck-button ondeck-button--danger" onClick={() => deleteAgent(agent.id)}>
             <Trash2 size={14} />
             Delete Agent
           </button>
         </div>
-        {agent.needs_session_rekey && (
+        {agent.needs_private_key && (
           <p className="ondeck-muted">
-            This imported or restored agent has no session private key in memory. Regenerate identity to resume signed outbound relays.
+            This is an imported agent with no private key on this device. It can be viewed and trusted, but it can't be
+            resigned or used to sign relays here.
           </p>
         )}
       </div>

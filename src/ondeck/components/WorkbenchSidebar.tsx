@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Download, Import, KeyRound, Plus } from 'lucide-react';
+import { Download, Import, KeyRound, Plus, ShieldCheck } from 'lucide-react';
 import { AGENT_TEMPLATES } from '../templates';
 import { useDeckStore } from '../store/useDeckStore';
 
@@ -8,6 +8,9 @@ export function WorkbenchSidebar() {
   const apiKey = useDeckStore(state => state.apiKey);
   const setApiBaseUrl = useDeckStore(state => state.setApiBaseUrl);
   const setApiKey = useDeckStore(state => state.setApiKey);
+  const owner = useDeckStore(state => state.owner);
+  const ensureOwnerIdentity = useDeckStore(state => state.ensureOwnerIdentity);
+  const workbenchError = useDeckStore(state => state.workbenchError);
   const createAgentFromTemplate = useDeckStore(state => state.createAgentFromTemplate);
   const exportAgent = useDeckStore(state => state.exportAgent);
   const importAgent = useDeckStore(state => state.importAgent);
@@ -16,6 +19,7 @@ export function WorkbenchSidebar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importStatus, setImportStatus] = useState('');
+  const [ownerNameDraft, setOwnerNameDraft] = useState('');
 
   const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
   const templateCards = useMemo(() => AGENT_TEMPLATES, []);
@@ -25,8 +29,46 @@ export function WorkbenchSidebar() {
       <div className="ondeck-panel">
         <div className="ondeck-panel__header">OnDeck</div>
         <p className="ondeck-muted">
-          Local-first agent canvas with signed identity, trusted relays, optional encrypted memory, and streaming chat.
+          Local-first agent canvas with 01Protocol-signed identity, owner-bound enrollment, trusted relays, optional
+          encrypted memory, and streaming chat.
         </p>
+      </div>
+
+      <div className="ondeck-panel">
+        <div className="ondeck-panel__header">
+          <ShieldCheck size={16} />
+          Owner Identity
+        </div>
+        {owner ? (
+          <>
+            <p className="ondeck-muted">
+              Every agent you create is enrolled in 01Protocol and delegated from this identity — that delegation is
+              what ties each agent back to you.
+            </p>
+            <div className="ondeck-code-block">{owner.identity.instanceId}</div>
+            <div className="ondeck-code-block">{owner.identity.signerPublicKey}</div>
+          </>
+        ) : (
+          <>
+            <p className="ondeck-muted">
+              01Deck requires an owner identity before any agent can be created. Creating your first agent will enroll
+              one automatically — or set it up here first.
+            </p>
+            <label className="ondeck-label">
+              Display name
+              <input
+                value={ownerNameDraft}
+                onChange={event => setOwnerNameDraft(event.target.value)}
+                className="ondeck-input"
+                placeholder="Owner"
+              />
+            </label>
+            <button className="ondeck-button" onClick={() => ensureOwnerIdentity(ownerNameDraft)}>
+              <ShieldCheck size={14} />
+              Enroll Owner Identity
+            </button>
+          </>
+        )}
       </div>
 
       <div className="ondeck-panel">
@@ -75,6 +117,7 @@ export function WorkbenchSidebar() {
             </div>
           ))}
         </div>
+        {workbenchError && <p className="ondeck-error">{workbenchError}</p>}
       </div>
 
       <div className="ondeck-panel">
@@ -128,13 +171,13 @@ export function WorkbenchSidebar() {
             <div className="ondeck-selected-title">{selectedAgent.name}</div>
             <div className="ondeck-selected-meta">
               <span className={`ondeck-mini-tag ${selectedAgent.signature_verified ? 'ondeck-mini-tag--green' : 'ondeck-mini-tag--red'}`}>
-                {selectedAgent.signature_verified ? 'signed' : 'invalid'}
+                {selectedAgent.signature_verified ? 'signed & owner-bound' : 'invalid'}
               </span>
               <span className="ondeck-mini-tag">{selectedAgent.encryption_enabled ? 'encrypted' : 'plain'}</span>
-              {selectedAgent.needs_session_rekey && (
+              {selectedAgent.needs_private_key && (
                 <span className="ondeck-mini-tag ondeck-mini-tag--red">
                   <KeyRound size={12} />
-                  session key missing
+                  no private key
                 </span>
               )}
             </div>

@@ -18,6 +18,7 @@
     "preview:foundry": "vite preview --mode foundry --port 4174"
   },
   "dependencies": {
+    "@01protocol/sdk": "file:./vendor/01protocol-sdk",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/icons-material": "7.3.5",

@@ -27,11 +27,12 @@ function AppContent() {
     workspaceSection, 
     showHub, setShowHub, 
     hubInitialView, 
-    maestroEnabled,
+    isPluginEnabled,
     showCreateImport,
     setShowCreateImport
   } = useApp();
   const maestroAccent = '#ff4da6';
+  const maestroEnabled = isPluginEnabled('01maestro');
 
   return (
     <div

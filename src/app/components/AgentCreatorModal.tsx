@@ -11,8 +11,9 @@ import { useApp } from '../context/AppContext';
 import { Agent } from '../data/agents';
 import { ProceduralAvatar } from './ProceduralAvatar';
 import { generateAvatarDataUrl, AvatarStyle } from '../utils/avatarUtils';
-import { createDeckProtocolPayload } from '../utils/protocol';
+import { createDeckProtocolPayload, bindAgentToOwner, serializeOwnerBinding } from '../utils/protocol';
 import { ensureAgentMemoryVault } from '../services/memoryVault';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 const GEN_STEPS = [
   { label: 'Initializing 01 Protocol v3.0', duration: 500 },
@@ -52,7 +53,7 @@ const CATEGORIES = [
 type Screen = 'form' | 'generating' | 'preview' | 'success';
 
 export function AgentCreatorModal() {
-  const { showCreator, setShowCreator, currentTheme: t, addAgent, setChatAgent } = useApp();
+  const { showCreator, setShowCreator, currentTheme: t, addAgent, setChatAgent, ensureOwnerIdentity } = useApp();
 
   const [screen, setScreen] = useState<Screen>('form');
   const [agentName, setAgentName] = useState('');
@@ -68,7 +69,6 @@ export function AgentCreatorModal() {
   const [showCustomize, setShowCustomize] = useState(false);
   const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
   const [createdAgentPrivKey, setCreatedAgentPrivKey] = useState<string>('');
-  const [deployStatus, setDeployStatus] = useState<'idle' | 'deploying' | 'success'>('idle');
   const [nameError, setNameError] = useState('');
   const [goalError, setGoalError] = useState('');
   const avatarCandidates = useMemo(
@@ -154,6 +154,16 @@ export function AgentCreatorModal() {
       rarityLabel: 'common',
     });
 
+    // Mandatory owner binding: every agent created here is delegation-bound
+    // to this installation's 01Protocol owner identity (enrolled on first
+    // use) so it can always be traced back to the human who created it.
+    const owner = ensureOwnerIdentity();
+    const ownerBinding = bindAgentToOwner({
+      owner: owner.identity,
+      ownerPrivateKeyHex: owner.privateKeyHex,
+      agent: protocol.protocolAgent,
+    });
+
     return {
       privateKeyHex: protocol.privateKeyHex || '',
       agent: {
@@ -191,6 +201,8 @@ export function AgentCreatorModal() {
         identityRecord: protocol.identityRecord,
         bundleRecord: protocol.bundleRecord,
         verification: protocol.verification,
+        ownerDelegationRecord: serializeOwnerBinding(ownerBinding),
+        ownerInstanceId: owner.identity.instanceId,
         systemPrompt: `You are ${name}. Your role is ${agentRole || '01 Protocol Agent Ambassador'}. Your goal is: ${agentGoal.trim()}.`,
       }
     };
@@ -243,19 +255,15 @@ export function AgentCreatorModal() {
     saveAs(blob, `${createdAgent.name.toLowerCase()}_01protocol_vault.zip`);
   };
 
-  const handleQuickDeploy = () => {
-    // In a full desktop/backend implementation, this would trigger an IPC or backend API call.
-    // For the web interface, we mock the UI flow to demonstrate the UX.
-    setDeployStatus('deploying');
-    setTimeout(() => {
-      setDeployStatus('success');
-    }, 1500);
-  };
-
   const handleOpenAgent = () => {
     if (createdAgent) setChatAgent(createdAgent);
     handleClose();
   };
+
+  const panelRef = useModalA11y<HTMLDivElement>({
+    isOpen: showCreator,
+    onClose: handleClose,
+  });
 
   if (!showCreator) return null;
 
@@ -271,12 +279,17 @@ export function AgentCreatorModal() {
         onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
       >
         <motion.div
+          ref={panelRef}
           key="creator-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="agent-creator-title"
+          tabIndex={-1}
           initial={{ scale: 0.92, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.92, opacity: 0, y: 20 }}
           transition={{ duration: 0.35, ease: [0.34, 1.2, 0.64, 1] }}
-          className="relative w-full max-w-md mx-4 rounded-3xl overflow-hidden"
+          className="relative w-full max-w-md mx-4 rounded-3xl overflow-hidden focus:outline-none"
           style={{
             background: t.surface1,
             border: `1px solid ${t.border}`,
@@ -294,7 +307,7 @@ export function AgentCreatorModal() {
             }}
           >
             <div>
-              <h3 className="text-sm" style={{ color: t.text }}>
+              <h3 id="agent-creator-title" className="text-sm" style={{ color: t.text }}>
                 {screen === 'form' && 'Create New Agent'}
                 {screen === 'generating' && `Generating ${agentName.toUpperCase()}...`}
                 {screen === 'preview' && 'Visual Identity'}
@@ -305,7 +318,9 @@ export function AgentCreatorModal() {
               </p>
             </div>
             <button
+              type="button"
               onClick={handleClose}
+              aria-label="Close agent creator"
               className="w-8 h-8 rounded-full flex items-center justify-center"
               style={{ background: t.surface3, color: t.textMuted }}
             >
@@ -746,31 +761,22 @@ export function AgentCreatorModal() {
                     <span className="text-[10px] opacity-70">Includes keys, memory, and logs folders</span>
                   </motion.button>
                   <motion.button
-                    onClick={deployStatus === 'idle' ? handleQuickDeploy : undefined}
-                    disabled={deployStatus !== 'idle'}
-                    className="flex-1 flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl text-xs"
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    title="Local Quick Deploy requires a desktop or backend build and isn't available in this browser build yet. Use Download Archive instead."
+                    aria-label="Local Quick Deploy — not available in this browser build. Use Download Archive instead."
+                    className="flex-1 flex flex-col items-center justify-center gap-1.5 p-4 rounded-2xl text-xs cursor-not-allowed"
                     style={{
-                      background: deployStatus === 'success' ? 'rgba(34,197,94,0.15)' : t.surface2,
-                      border: `1px solid ${deployStatus === 'success' ? 'rgba(34,197,94,0.3)' : t.border}`,
-                      color: deployStatus === 'success' ? '#22c55e' : t.text,
-                      cursor: deployStatus === 'idle' ? 'pointer' : 'default',
+                      background: t.surface2,
+                      border: `1px dashed ${t.border}`,
+                      color: t.textMuted,
+                      opacity: 0.6,
                     }}
-                    whileHover={deployStatus === 'idle' ? { scale: 1.02, borderColor: t.accent } : {}}
-                    whileTap={deployStatus === 'idle' ? { scale: 0.98 } : {}}
                   >
-                    {deployStatus === 'deploying' ? (
-                      <RefreshCw size={20} className="animate-spin" />
-                    ) : deployStatus === 'success' ? (
-                      <Check size={20} />
-                    ) : (
-                      <HardDrive size={20} style={{ color: t.text }} />
-                    )}
-                    <span className="font-medium">
-                      {deployStatus === 'deploying' ? 'Deploying...' : deployStatus === 'success' ? 'Deployed to ~/.01protocol' : 'Local Quick Deploy'}
-                    </span>
-                    <span className="text-[10px] opacity-70">
-                      {deployStatus === 'success' ? 'Files are ready.' : 'Auto-save to system directories'}
-                    </span>
+                    <HardDrive size={20} style={{ color: t.textMuted }} />
+                    <span className="font-medium">Local Quick Deploy</span>
+                    <span className="text-[10px] opacity-80">Not available in the browser build — use Download Archive</span>
                   </motion.button>
                 </div>
 

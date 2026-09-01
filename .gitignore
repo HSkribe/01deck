@@ -30,3 +30,6 @@ venv/
 
 01Evolve/.coverage
 01Evolve/htmlcov/
+
+# vendored third-party repos pulled in for reference/research — not project source
+.agents/

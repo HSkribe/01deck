@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, UserPlus, Gamepad2, BookOpen, HelpCircle, GraduationCap, Download, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface Option {
   id: string;
@@ -59,6 +60,8 @@ export function CreateImportModal({ isOpen, onClose }: { isOpen: boolean; onClos
     },
   ];
 
+  const panelRef = useModalA11y<HTMLDivElement>({ isOpen, onClose });
+
   if (!isOpen) return null;
 
   return (
@@ -72,10 +75,15 @@ export function CreateImportModal({ isOpen, onClose }: { isOpen: boolean; onClos
         onClick={onClose}
       >
         <motion.div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-import-modal-title"
+          tabIndex={-1}
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className="w-full max-w-4xl rounded-3xl overflow-hidden flex flex-col md:flex-row h-[600px]"
+          className="w-full max-w-4xl rounded-3xl overflow-hidden flex flex-col md:flex-row h-[600px] focus:outline-none"
           style={{
             background: t.surface1,
             border: `1px solid ${t.border}`,
@@ -86,8 +94,8 @@ export function CreateImportModal({ isOpen, onClose }: { isOpen: boolean; onClos
           {/* Left Side: Options */}
           <div className="flex-1 p-8 flex flex-col h-full" style={{ borderRight: `1px solid ${t.border}` }}>
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-xl font-medium" style={{ color: t.text }}>I Would Like to Create/Import...?</h2>
-              <button onClick={onClose} style={{ color: t.textMuted }}><X size={20} /></button>
+              <h2 id="create-import-modal-title" className="text-xl font-medium" style={{ color: t.text }}>I Would Like to Create/Import...?</h2>
+              <button type="button" onClick={onClose} aria-label="Close" style={{ color: t.textMuted }}><X size={20} /></button>
             </div>
 
             <div className="space-y-3 flex-1 overflow-y-auto pr-2">

@@ -1,6 +1,15 @@
-import { createAgent as createProtocolAgent, verifyFromText } from '@01protocol/sdk';
-import type { AgentId as ProtocolAgentId } from '@01protocol/sdk';
+import {
+  createAgent as createProtocolAgent,
+  verifyFromText,
+  createDelegationToken,
+  verifyDelegationToken,
+  serializeDelegationToken,
+  parseDelegationToken,
+} from '@01protocol/sdk';
+import type { AgentId as ProtocolAgentId, DelegationToken, DelegationScope, DelegationVerifyResult } from '@01protocol/sdk';
 import type { Agent } from '../data/agents';
+
+export type { ProtocolAgentId as AgentId, DelegationToken, DelegationScope, DelegationVerifyResult };
 
 export interface DeckProtocolPayload {
   protocolAgent: ProtocolAgentId;
@@ -229,4 +238,80 @@ export function parseDeckProtocolText(text: string): ParsedDeckProtocolText {
     error: result.error,
     source: 'none',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Owner identity + mandatory owner binding
+//
+// Every agent created in 01Deck already gets its own 01Protocol identity
+// (above). This section adds the piece that ties that identity back to the
+// human running this installation: a one-per-installation "owner" identity,
+// and a delegation token — signed by the owner's private key, naming the
+// agent's instanceId as the delegate — attached to every agent at creation
+// time. See AppContext's `ensureOwnerIdentity` (lazily creates the owner
+// identity on first use) and AgentCreatorModal's `buildAgent` (calls
+// `bindAgentToOwner` for every new agent). This mirrors the same pattern
+// used by the 01deck-agent-platform skill / src/ondeck workbench.
+// ---------------------------------------------------------------------------
+
+const OWNER_ROLE = 'owner';
+const OWNER_GOAL = 'Human operator of this 01Deck instance | 01deck-app';
+const DEFAULT_OWNER_SCOPE: DelegationScope = { actions: ['operate', 'sign', 'relay'] };
+// 01Protocol delegation tokens require an expiry; an owner->agent binding is
+// meant to last the agent's lifetime, so a fixed far-future date is used
+// rather than modeling "never expires" as a special case downstream.
+const NO_PRACTICAL_EXPIRY = '2999-01-01T00:00:00.000Z';
+
+export interface OwnerIdentityState {
+  identity: ProtocolAgentId;
+  privateKeyHex: string;
+}
+
+/** Enroll the one-per-installation 01Protocol owner identity. Called lazily, the first time an agent needs to be bound to it. */
+export function enrollOwnerIdentity(displayName: string): OwnerIdentityState {
+  const created = createProtocolAgent({
+    name: displayName,
+    role: OWNER_ROLE,
+    goal: OWNER_GOAL,
+    includeMemory: false,
+  });
+  return { identity: created.agent, privateKeyHex: created.privateKeyHex };
+}
+
+/** Mandatory owner binding: a delegation token signed by the owner, naming this agent as the delegate. */
+export function bindAgentToOwner(input: {
+  owner: ProtocolAgentId;
+  ownerPrivateKeyHex: string;
+  agent: ProtocolAgentId;
+  scope?: DelegationScope;
+}): DelegationToken {
+  return createDelegationToken({
+    delegator: input.owner,
+    delegatorPrivateKeyHex: input.ownerPrivateKeyHex,
+    delegateInstanceId: input.agent.instanceId,
+    scope: input.scope ?? DEFAULT_OWNER_SCOPE,
+    expiresAt: NO_PRACTICAL_EXPIRY,
+  });
+}
+
+/** Confirm an agent is still validly bound to the owner it claims (signature valid, not expired, both identities match). */
+export function verifyOwnerBinding(input: {
+  token: DelegationToken;
+  owner: ProtocolAgentId;
+  agent: ProtocolAgentId;
+}): DelegationVerifyResult {
+  return verifyDelegationToken({
+    token: input.token,
+    delegator: input.owner,
+    delegate: input.agent,
+    action: 'operate',
+  });
+}
+
+export function serializeOwnerBinding(token: DelegationToken): string {
+  return serializeDelegationToken(token);
+}
+
+export function parseOwnerBinding(text: string): DelegationToken {
+  return parseDelegationToken(text);
 }

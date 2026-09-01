@@ -2,13 +2,62 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   MessageSquare, ChevronLeft, Plus, ThumbsUp, Reply, Pin,
-  Eye, Search, X, Send, Tag,
+  Eye, Search, X, Send, Tag, Sparkles,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
+import { Agent } from '../../../data/agents';
+import { getActiveApiKey, generateAgentCompletion } from '../../../services/llmClient';
 import {
   ForumThread, ForumReply, ForumTag, ForumAuthor,
-  TAG_CONFIG, seedThreads,
+  TAG_CONFIG, seedThreads, agentForumAuthor,
 } from '../../../data/forumData';
+
+// ─── Agent auto-response ────────────────────────────────────
+
+// Rough tag → agent category routing so replies come from a relevant specialist.
+const TAG_TO_CATEGORY: Partial<Record<ForumTag, string>> = {
+  bug: 'code',
+  strategy: 'strategy',
+  meta: 'strategy',
+  question: 'research',
+  showcase: 'creative',
+  feedback: 'comms',
+};
+
+function pickRespondingAgent(tags: ForumTag[], allAgents: Agent[]): Agent | null {
+  if (allAgents.length === 0) return null;
+  const wantedCategories = new Set(tags.map(t => TAG_TO_CATEGORY[t]).filter(Boolean));
+  const matches = allAgents.filter(a => wantedCategories.has(a.category));
+  const pool = matches.length > 0 ? matches : allAgents;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const AGENT_FALLBACK_REPLIES = [
+  'Logging this one — will circle back with a fuller answer once I\'ve had a chance to dig in.',
+  'Good question. Short version: it depends on scope, but happy to go deeper if you share more context.',
+  'Noted. Flagging this thread so I can follow up properly.',
+  'Interesting thread — bookmarking this to think through properly.',
+];
+
+/** Have a roster agent respond to a human forum post. Uses a live LLM if the user has a key configured, otherwise a canned in-character fallback. */
+async function generateForumAgentReply(agent: Agent, threadTitle: string, contextText: string): Promise<string> {
+  const activeKey = getActiveApiKey();
+  if (!activeKey) {
+    return AGENT_FALLBACK_REPLIES[Math.floor(Math.random() * AGENT_FALLBACK_REPLIES.length)];
+  }
+  try {
+    return await generateAgentCompletion({
+      provider: activeKey.provider,
+      apiKey: activeKey.key,
+      systemPrompt: `You are ${agent.name}, a ${agent.role} (${agent.specialization}) participating in the public 01Deck community forum under 01 Protocol ${agent.protocolId || 'v3.0'}. Reply helpfully and specifically to the post below, in character, in 2-4 sentences. This is a public forum reply, not a private chat — do not repeat the question back, get straight to useful advice.`,
+      messages: [
+        { role: 'user', content: `Thread: "${threadTitle}"\n\n${contextText}` },
+      ],
+    });
+  } catch {
+    return AGENT_FALLBACK_REPLIES[Math.floor(Math.random() * AGENT_FALLBACK_REPLIES.length)];
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -30,6 +79,17 @@ const ME_AUTHOR: ForumAuthor = {
 const ALL_TAGS: ForumTag[] = ['decks', 'strategy', 'question', 'showcase', 'meta', 'bug', 'feedback', 'off-topic'];
 
 // ─── Tag badge ────────────────────────────────────────────
+
+function AgentTag() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+      style={{ background: 'rgba(255,77,166,0.15)', color: '#ff4da6', border: '1px solid rgba(255,77,166,0.35)' }}
+    >
+      <Sparkles size={9} /> Agent
+    </span>
+  );
+}
 
 function TagBadge({ tag }: { tag: ForumTag }) {
   const cfg = TAG_CONFIG[tag];
@@ -251,7 +311,9 @@ function ThreadDetail({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-medium" style={{ color: t.text }}>{thread.author.name}</span>
-                <span className="text-[10px]" style={{ color: t.textMuted }}>Lv.{thread.author.level}</span>
+                {thread.author.isAgent ? <AgentTag /> : (
+                  <span className="text-[10px]" style={{ color: t.textMuted }}>Lv.{thread.author.level}</span>
+                )}
                 <span className="text-[10px]" style={{ color: t.textMuted }}>{timeAgo(thread.timestamp)}</span>
                 {thread.pinned && (
                   <span className="flex items-center gap-1 text-[10px]" style={{ color: '#f59e0b' }}>
@@ -302,6 +364,7 @@ function ThreadDetail({
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-medium" style={{ color: t.text }}>{reply.author.name}</span>
+                    {reply.author.isAgent && <AgentTag />}
                     <span className="text-[10px]" style={{ color: t.textMuted }}>{timeAgo(reply.timestamp)}</span>
                   </div>
                   <p className="text-xs leading-relaxed" style={{ color: t.text }}>{reply.content}</p>
@@ -398,6 +461,12 @@ function ThreadItem({
       <div className="flex items-center gap-1.5">
         <img src={thread.author.avatar} alt={thread.author.name} className="w-4 h-4 rounded-full" />
         <span className="text-[10px]" style={{ color: t.textMuted }}>{thread.author.name}</span>
+        {thread.author.isAgent && <AgentTag />}
+        {!thread.author.isAgent && thread.replies.some(r => r.author.isAgent) && (
+          <span className="flex items-center gap-1 text-[9px]" style={{ color: '#ff4da6' }}>
+            <Sparkles size={9} /> Agent replied
+          </span>
+        )}
       </div>
     </motion.button>
   );
@@ -406,12 +475,39 @@ function ThreadItem({
 // ─── ForumHub ─────────────────────────────────────────────
 
 export function ForumHub() {
-  const { currentTheme: t } = useApp();
+  const { currentTheme: t, allAgents } = useApp();
   const [threads, setThreads] = useState<ForumThread[]>(seedThreads);
   const [selectedThread, setSelectedThread] = useState<ForumThread | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState<ForumTag | null>(null);
+
+  const appendReply = (threadId: string, reply: ForumReply) => {
+    setThreads(prev =>
+      prev.map(th => th.id === threadId ? { ...th, replies: [...th.replies, reply] } : th),
+    );
+    setSelectedThread(prev => prev && prev.id === threadId ? { ...prev, replies: [...prev.replies, reply] } : prev);
+  };
+
+  const triggerAgentReply = (threadId: string, tags: ForumTag[], threadTitle: string, contextText: string) => {
+    const agent = pickRespondingAgent(tags, allAgents);
+    if (!agent) return;
+
+    setTimeout(() => {
+      void (async () => {
+        const content = await generateForumAgentReply(agent, threadTitle, contextText);
+        const reply: ForumReply = {
+          id: `r-agent-${Date.now()}`,
+          threadId,
+          author: agentForumAuthor(agent.id),
+          content,
+          timestamp: new Date().toISOString(),
+          likes: 0,
+        };
+        appendReply(threadId, reply);
+      })();
+    }, 900 + Math.random() * 900);
+  };
 
   const filteredThreads = threads
     .filter(th =>
@@ -439,6 +535,7 @@ export function ForumHub() {
     setThreads(prev => [newThread, ...prev]);
     setShowNew(false);
     setSelectedThread(newThread);
+    triggerAgentReply(newThread.id, tags, title, body);
   };
 
   const handleLikeReply = (threadId: string, replyId: string) => {
@@ -467,10 +564,12 @@ export function ForumHub() {
       timestamp: new Date().toISOString(),
       likes: 0,
     };
-    setThreads(prev =>
-      prev.map(th => th.id === threadId ? { ...th, replies: [...th.replies, reply] } : th),
-    );
-    setSelectedThread(prev => prev ? { ...prev, replies: [...prev.replies, reply] } : prev);
+    appendReply(threadId, reply);
+
+    const thread = threads.find(th => th.id === threadId);
+    if (thread) {
+      triggerAgentReply(threadId, thread.tags, thread.title, content);
+    }
   };
 
   const handleSelectThread = (thread: ForumThread) => {

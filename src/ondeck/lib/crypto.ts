@@ -1,3 +1,9 @@
+// Agent identity (keypairs, signing, verification) lives entirely in
+// ./protocol.ts now, backed by the vendored @01protocol/sdk — see that
+// file's header comment for why. This module only handles the pieces that
+// were never identity: hashing persistent-memory entries for the tamper
+// chain, and AES-GCM encryption of messages/memory at rest.
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -18,114 +24,10 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map(byte => byte.toString(16).padStart(2, '0'))
     .join('');
-}
-
-// Identity is signed from only the stable state fields so the signature can be
-// re-verified after import without depending on runtime-only data.
-export async function computeStateHash(input: {
-  system_prompt: string;
-  model: string;
-  temperature: number;
-}): Promise<string> {
-  const payload = JSON.stringify({
-    system_prompt: input.system_prompt,
-    model: input.model,
-    temperature: input.temperature,
-  });
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
-  return bytesToHex(new Uint8Array(digest));
-}
-
-export async function generateAgentIdentity(input: {
-  system_prompt: string;
-  model: string;
-  temperature: number;
-}): Promise<{
-  public_key: string;
-  private_key: CryptoKey;
-  state_hash: string;
-  signature: string;
-}> {
-  const state_hash = await computeStateHash(input);
-  const keyPair = await crypto.subtle.generateKey(
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    true,
-    ['sign', 'verify'],
-  );
-  const signatureBuffer = await crypto.subtle.sign(
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    keyPair.privateKey,
-    encoder.encode(state_hash),
-  );
-  const rawPublicKey = await crypto.subtle.exportKey('raw', keyPair.publicKey);
-
-  return {
-    public_key: bytesToBase64(new Uint8Array(rawPublicKey)),
-    private_key: keyPair.privateKey,
-    state_hash,
-    signature: bytesToBase64(new Uint8Array(signatureBuffer)),
-  };
-}
-
-export async function verifyAgentSignature(input: {
-  public_key: string;
-  signature: string;
-  system_prompt: string;
-  model: string;
-  temperature: number;
-  state_hash: string;
-}): Promise<boolean> {
-  const derivedHash = await computeStateHash(input);
-  if (derivedHash !== input.state_hash) return false;
-
-  const publicKey = await crypto.subtle.importKey(
-    'raw',
-    base64ToBytes(input.public_key),
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    true,
-    ['verify'],
-  );
-
-  return crypto.subtle.verify(
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    publicKey,
-    base64ToBytes(input.signature),
-    encoder.encode(input.state_hash),
-  );
-}
-
-export async function signPayload(privateKey: CryptoKey, payload: string): Promise<string> {
-  const signature = await crypto.subtle.sign(
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    privateKey,
-    encoder.encode(payload),
-  );
-  return bytesToBase64(new Uint8Array(signature));
-}
-
-export async function verifyPayload(
-  publicKeyBase64: string,
-  payload: string,
-  signatureBase64: string,
-): Promise<boolean> {
-  const publicKey = await crypto.subtle.importKey(
-    'raw',
-    base64ToBytes(publicKeyBase64),
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    true,
-    ['verify'],
-  );
-
-  return crypto.subtle.verify(
-    { name: 'Ed25519' } as AlgorithmIdentifier,
-    publicKey,
-    base64ToBytes(signatureBase64),
-    encoder.encode(payload),
-  );
 }
 
 export async function sha256Hex(payload: string): Promise<string> {

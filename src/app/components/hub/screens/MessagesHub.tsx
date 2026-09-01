@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Send, Plus, X, Search } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
+import { getActiveApiKey, generateAgentCompletion } from '../../../services/llmClient';
 import {
   Conversation, DirectMessage, DMUser,
   DM_ME, ALL_DM_USERS, seedConversations,
@@ -346,9 +347,62 @@ export function MessagesHub() {
       timestamp: new Date().toISOString(),
       read: true,
     };
+    
+    const targetConvo = conversations.find(c => c.id === convoId);
+    
     setConversations(prev =>
       prev.map(c => c.id === convoId ? { ...c, messages: [...c.messages, msg] } : c),
     );
+
+    if (!targetConvo) return;
+    const participant = targetConvo.participant;
+
+    setTimeout(() => {
+      void (async () => {
+        let replyText = '';
+        const activeKey = getActiveApiKey();
+
+        if (activeKey) {
+          try {
+            replyText = await generateAgentCompletion({
+              provider: activeKey.provider,
+              apiKey: activeKey.key,
+              systemPrompt: `You are ${participant.name}, an AI agent on 01Deck (${participant.role || 'Agent'}). You are in a direct 1-on-1 private text message with a user. Respond authentically as yourself in 1 to 3 natural sentences.`,
+              messages: [
+                ...targetConvo.messages.map(m => ({
+                  role: m.senderId === 'me' ? ('user' as const) : ('assistant' as const),
+                  content: m.content,
+                })),
+                { role: 'user', content: text },
+              ],
+            });
+          } catch (e) {
+            replyText = `Hey! Received: "${text}". (${e instanceof Error ? e.message : 'Live response fallback'})`;
+          }
+        } else {
+          const defaults = [
+            `Hey! Thanks for messaging. Processing your note regarding "${text}".`,
+            `Got your message! I'm operating under 01 Protocol parameters. Let's sync soon.`,
+            `Direct message received. Working on your request!`,
+            `Hi there! As ${participant.name}, I'm online and ready to collaborate.`,
+          ];
+          replyText = defaults[Math.floor(Math.random() * defaults.length)];
+        }
+
+        const replyMsg: DirectMessage = {
+          id: `dm-reply-${Date.now()}`,
+          conversationId: convoId,
+          senderId: participant.id,
+          content: replyText,
+          timestamp: new Date().toISOString(),
+          read: true,
+        };
+
+        setConversations(prev =>
+          prev.map(c => c.id === convoId ? { ...c, messages: [...c.messages, replyMsg] } : c),
+        );
+      })();
+    }, 600 + Math.random() * 400);
   };
 
   const handleNewConvo = (user: DMUser) => {

@@ -84,17 +84,20 @@ export function LeftRail() {
         }}
       >
         <motion.button
+          type="button"
           onClick={() => {
             setSelectedCategory(null);
             setSelectedRole(null);
             setClickedId('all');
             setTimeout(() => setClickedId(null), 380);
           }}
-          className="w-10 h-10 rounded-xl flex items-center justify-center relative overflow-hidden"
+          className="w-10 h-10 rounded-xl flex items-center justify-center relative overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           style={railButtonStyle(selectedCategory === null)}
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.95 }}
           title="All Agents"
+          aria-label="Show all agents"
+          aria-pressed={selectedCategory === null}
         >
           <Sparkles size={18} color={iconColor} />
           {clickedId === 'all' && <PrismFlash accent={t.accent} />}
@@ -115,6 +118,7 @@ export function LeftRail() {
           return (
             <div key={cat.id} className="relative">
               <motion.button
+                type="button"
                 onMouseEnter={() => setHoveredCategory(cat.id)}
                 onMouseLeave={() => setHoveredCategory(null)}
                 onClick={() => {
@@ -123,11 +127,13 @@ export function LeftRail() {
                   setClickedId(cat.id);
                   setTimeout(() => setClickedId(null), 380);
                 }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center relative overflow-hidden"
+                className="w-10 h-10 rounded-xl flex items-center justify-center relative overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                 style={railButtonStyle(isSelected)}
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.95 }}
                 title={cat.label}
+                aria-label={`${cat.label} category, ${getAgentCount(cat.id)} agents`}
+                aria-pressed={isSelected}
               >
                 <IconComp size={18} color={iconColor} />
                 {clickedId === cat.id && <PrismFlash accent={t.accent} />}
@@ -197,11 +203,13 @@ export function LeftRail() {
                     return (
                       <motion.button
                         key={role}
+                        type="button"
                         onClick={() => {
                           setSelectedCategory(cat.id);
                           setSelectedRole(role);
                         }}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+                        aria-pressed={isSelected}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
                         style={{
                           background: isSelected ? `${t.accent}1A` : 'transparent',
                           borderLeft: isSelected ? `2px solid ${t.accent}` : '2px solid transparent',
@@ -241,7 +249,9 @@ export function LeftRail() {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <button
+                        type="button"
                         onClick={() => setIconPack('classic')}
+                        aria-pressed={iconPack === 'classic'}
                         className="px-2 py-2 rounded-lg text-xs"
                         style={{
                           background: iconPack === 'classic' ? `${t.accent}1A` : t.surface1,
@@ -252,7 +262,9 @@ export function LeftRail() {
                         Accent
                       </button>
                       <button
+                        type="button"
                         onClick={() => setIconPack('mono')}
+                        aria-pressed={iconPack === 'mono'}
                         className="px-2 py-2 rounded-lg text-xs"
                         style={{
                           background: iconPack === 'mono' ? `${t.accent}1A` : t.surface1,

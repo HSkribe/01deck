@@ -55,6 +55,13 @@ export interface Agent {
   memoryVaultId?: string;
   memoryEntryCount?: number;
   memoryLastSyncedAt?: string;
+  // Mandatory 01Protocol owner binding — a delegation token (signed by this
+  // installation's owner identity) naming this agent as the delegate. Set on
+  // every agent created through AgentCreatorModal; absent on the seed/demo
+  // agents shipped with the app, since those were never enrolled by a real
+  // owner. See src/app/utils/protocol.ts.
+  ownerDelegationRecord?: string;
+  ownerInstanceId?: string;
   hasEvolution?: boolean;
   evolutionStage?: 0 | 1 | 2 | 3;
   evolutionTraits?: string[];

@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { rarityConfig, Agent } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
 import logoMark from '../assets/logo-mark.svg';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 function formatLastUsed(date: Date): string {
   const diff = Date.now() - date.getTime();
@@ -449,6 +450,11 @@ export function AgentCardModal() {
     setTimeout(() => setActiveAgent(null), 400);
   };
 
+  const panelRef = useModalA11y<HTMLDivElement>({
+    isOpen: isCardVisible,
+    onClose: handleClose,
+  });
+
   if (!activeAgent) return null;
   const config = rarityConfig[activeAgent.rarity];
 
@@ -469,16 +475,23 @@ export function AgentCardModal() {
           {/* Card */}
           <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
             <motion.div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${activeAgent.name} agent card`}
+              tabIndex={-1}
               initial={{ scale: 0.5, opacity: 0, y: 40 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.5, opacity: 0, y: 40 }}
               transition={{ duration: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
-              className="pointer-events-auto relative"
+              className="pointer-events-auto relative focus:outline-none"
               style={{ width: 380, height: 532 }}
             >
               {/* Close button */}
               <motion.button
+                type="button"
                 onClick={handleClose}
+                aria-label="Close agent card"
                 className="absolute -top-4 -right-4 z-20 w-8 h-8 rounded-full flex items-center justify-center"
                 style={{ background: t.surface3, border: `1px solid ${t.border}`, color: t.textMuted }}
                 whileHover={{ scale: 1.1, color: t.text }}
@@ -489,12 +502,21 @@ export function AgentCardModal() {
 
               {/* Card flip container */}
               <motion.div
-                className="w-full h-full"
+                className="w-full h-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded-2xl"
                 style={{
                   perspective: 1200,
                   cursor: 'pointer',
                 }}
+                role="button"
+                tabIndex={0}
+                aria-label={isFlipped ? `Showing back of ${activeAgent.name}'s card. Press Enter to flip to front.` : `Showing front of ${activeAgent.name}'s card. Press Enter to flip to back.`}
                 onClick={() => setIsFlipped(f => !f)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setIsFlipped(f => !f);
+                  }
+                }}
               >
                 <motion.div
                   className="w-full h-full relative"
