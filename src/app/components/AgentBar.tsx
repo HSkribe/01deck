@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useDrag } from 'react-dnd';
-import { Clock, Dna, MessageSquare, Play, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
+import { Clock, Dna, MessageSquare, Play, ShieldAlert, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { Agent, rarityConfig } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
 import { useApp } from '../context/AppContext';
@@ -279,6 +279,21 @@ export const AgentBar = React.forwardRef<HTMLDivElement, AgentBarProps>(function
             >
               <ShieldCheck size={8} />
               VERIFIED
+            </span>
+          )}
+          {/* Self-consistent but not owner-bound — must read as distinct
+              from VERIFIED, not silently upgraded to it. */}
+          {!agent.isVerified && agent.verification?.status === 'unbound' && (
+            <span
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] leading-none"
+              style={{
+                background: 'rgba(234,179,8,0.12)',
+                border: '1px solid rgba(234,179,8,0.35)',
+                color: '#eab308',
+              }}
+            >
+              <ShieldAlert size={8} />
+              SELF-SIGNED
             </span>
           )}
           {evolutionPluginEnabled && agent.hasEvolution && (

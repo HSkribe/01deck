@@ -44,7 +44,12 @@ function CardFront({ agent, config }: { agent: Agent; config: typeof rarityConfi
   const isLegend = agent.rarity === 'legend';
   const isMythic = agent.rarity === 'mythic';
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
-  const verificationTone = agent.isVerified
+  // Three honest states, not two: self-consistency alone (no/invalid owner
+  // binding) must never render as "Verified" — see verification.status in
+  // src/app/data/agents.ts and the composition logic in
+  // src/app/utils/protocol.ts.
+  const verificationStatus = agent.verification?.status;
+  const verificationTone = verificationStatus === 'verified'
     ? {
         label: '01P Verified',
         icon: ShieldCheck,
@@ -52,13 +57,21 @@ function CardFront({ agent, config }: { agent: Agent; config: typeof rarityConfi
         border: 'rgba(34,197,94,0.35)',
         color: '#86efac',
       }
-    : {
-        label: agent.identityRecord || agent.bundleRecord ? 'Verification Failed' : 'Verification Unavailable',
-        icon: ShieldAlert,
-        background: 'rgba(239,68,68,0.12)',
-        border: 'rgba(239,68,68,0.28)',
-        color: '#fca5a5',
-      };
+    : verificationStatus === 'unbound'
+      ? {
+          label: 'Self-Signed',
+          icon: ShieldAlert,
+          background: 'rgba(234,179,8,0.14)',
+          border: 'rgba(234,179,8,0.35)',
+          color: '#fde047',
+        }
+      : {
+          label: agent.identityRecord || agent.bundleRecord ? 'Verification Failed' : 'Verification Unavailable',
+          icon: ShieldAlert,
+          background: 'rgba(239,68,68,0.12)',
+          border: 'rgba(239,68,68,0.28)',
+          color: '#fca5a5',
+        };
   const VerificationIcon = verificationTone.icon;
 
   return (
@@ -245,6 +258,7 @@ function CardFront({ agent, config }: { agent: Agent; config: typeof rarityConfi
 function CardBack({ agent, config }: { agent: Agent; config: typeof rarityConfig[keyof typeof rarityConfig] }) {
   const { currentTheme: t, setChatAgent, isPluginEnabled } = useApp();
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
+  const verificationStatus = agent.verification?.status;
 
   return (
     <div className="relative w-full h-full flex flex-col overflow-hidden rounded-2xl">
@@ -397,8 +411,23 @@ function CardBack({ agent, config }: { agent: Agent; config: typeof rarityConfig
           </div>
           <div className="flex justify-between mb-1.5">
             <span style={{ color: 'rgba(255,255,255,0.35)' }}>Verification</span>
-            <span style={{ color: agent.isVerified ? '#86efac' : 'rgba(255,255,255,0.6)' }}>
-              {agent.isVerified ? 'PASS' : agent.identityRecord || agent.bundleRecord ? 'FAIL' : 'N/A'}
+            <span
+              style={{
+                color:
+                  verificationStatus === 'verified'
+                    ? '#86efac'
+                    : verificationStatus === 'unbound'
+                      ? '#fde047'
+                      : 'rgba(255,255,255,0.6)',
+              }}
+            >
+              {verificationStatus === 'verified'
+                ? 'PASS'
+                : verificationStatus === 'unbound'
+                  ? 'SELF-SIGNED'
+                  : agent.identityRecord || agent.bundleRecord
+                    ? 'FAIL'
+                    : 'N/A'}
             </span>
           </div>
           <div className="flex justify-between">

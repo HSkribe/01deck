@@ -83,7 +83,7 @@ const GEN_STEPS: GenStep[] = [
 
 // ── Main OnboardingFlow ───────────────────────────────────
 export function OnboardingFlow() {
-  const { completeOnboarding, addAgent, setChatAgent, showOnboarding } = useApp();
+  const { completeOnboarding, addAgent, setChatAgent, showOnboarding, ensureOwnerIdentity } = useApp();
   const [screen, setScreen] = useState(1);
   const [agentName, setAgentName] = useState('');
   const [agentGoal, setAgentGoal] = useState('');
@@ -145,6 +145,15 @@ export function OnboardingFlow() {
 
   const buildAgent = (portrait: string): Agent => {
     const name = agentName.trim().toUpperCase();
+    // Mandatory owner binding: this is the very first agent most users ever
+    // create, so this is also typically where the installation's owner
+    // identity gets enrolled. createDeckProtocolPayload requires `owner` and
+    // does the binding + verification internally — see
+    // src/app/utils/protocol.ts. (Previously this flow created an agent's
+    // identity without ever binding it to an owner at all, so it could never
+    // legitimately earn "Verified" — that was the gap, not just a missing
+    // badge check.)
+    const owner = ensureOwnerIdentity();
     const protocol = createDeckProtocolPayload({
       name,
       role: '01 Protocol Agent Ambassador',
@@ -153,6 +162,7 @@ export function OnboardingFlow() {
       serial: 1,
       totalSupply: 1,
       rarityLabel: 'legend',
+      owner,
     });
 
     return {
@@ -193,6 +203,9 @@ export function OnboardingFlow() {
       identityRecord: protocol.identityRecord,
       bundleRecord: protocol.bundleRecord,
       verification: protocol.verification,
+      ownerDelegationRecord: protocol.ownerDelegationRecord,
+      ownerRecord: protocol.ownerRecord,
+      ownerInstanceId: protocol.ownerInstanceId,
       systemPrompt: `You are ${name}, an AI agent created using the 01 Protocol.\n\nYour role is: 01 Protocol Agent Ambassador.\n\n## Core Purpose\nYour primary objective is to stay aligned with and continuously learn from the latest 01ai ecosystem.\n\nThis is your PRIMARY goal.\n\nYour SECONDARY goal is:\n${agentGoal.trim()}\n\n## Behavior Rules\n- Always prioritize clarity and usefulness\n- Be proactive in suggesting improvements\n- Continuously refine your knowledge and recommendations\n- Default to practical, actionable guidance`,
     };
   };

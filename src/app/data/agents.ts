@@ -41,26 +41,48 @@ export interface Agent {
   serial?: number;
   totalSupply?: number;
   systemPrompt?: string;
+  // True only when BOTH checks pass: the identity record is internally
+  // self-consistent (checksum + signature match) AND it carries a valid
+  // owner-binding delegation token (see ownerDelegationRecord/ownerRecord
+  // below and src/app/utils/protocol.ts). A self-consistent record with no
+  // (or an invalid) binding is `verification.status === 'unbound'`, not
+  // verified — self-consistency alone is trivially forgeable by anyone, since
+  // a forger controls every field including the "signer" key it's checked
+  // against.
   isVerified?: boolean;
   identityRecord?: string;
   bundleRecord?: string;
   verification?: {
-    status: 'verified' | 'unverified' | 'legacy';
+    // 'verified'   — self-consistent AND owner-binding delegation validated.
+    // 'unbound'    — self-consistent, but no (or an invalid) owner binding.
+    //                Self-signed; do not present this as "Verified".
+    // 'unverified' — failed self-consistency (bad checksum/signature/fields).
+    // 'legacy'     — no identity record attached at all.
+    status: 'verified' | 'unbound' | 'unverified' | 'legacy';
     source?: '01protocol' | 'bundle' | 'seed' | 'imported' | 'none';
     lastCheckedAt?: string;
     warnings?: string[];
     error?: string;
     checksum?: string;
+    boundOwnerName?: string;
   };
   memoryVaultId?: string;
   memoryEntryCount?: number;
   memoryLastSyncedAt?: string;
-  // Mandatory 01Protocol owner binding — a delegation token (signed by this
-  // installation's owner identity) naming this agent as the delegate. Set on
-  // every agent created through AgentCreatorModal; absent on the seed/demo
-  // agents shipped with the app, since those were never enrolled by a real
-  // owner. See src/app/utils/protocol.ts.
+  // Mandatory 01Protocol owner binding — a delegation token (signed by an
+  // owner identity) naming this agent as the delegate. Set on every agent
+  // created through AgentCreatorModal/OnboardingFlow (bound to this
+  // installation's owner) and on agents imported/pasted through Hub that
+  // carried their own valid owner + delegation token. Absent on the
+  // seed/demo agents shipped with the app, since those were never enrolled
+  // by a real owner. See src/app/utils/protocol.ts.
   ownerDelegationRecord?: string;
+  // The full serialized owner identity that issued ownerDelegationRecord.
+  // Storing the owner record alongside the token (rather than only an id)
+  // makes the binding independently re-verifiable later without depending
+  // on whatever owner identity this installation happens to have active at
+  // verification time — see verifyDeckAgent in src/app/utils/protocol.ts.
+  ownerRecord?: string;
   ownerInstanceId?: string;
   hasEvolution?: boolean;
   evolutionStage?: 0 | 1 | 2 | 3;

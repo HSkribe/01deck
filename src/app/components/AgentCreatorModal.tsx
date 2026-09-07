@@ -11,7 +11,7 @@ import { useApp } from '../context/AppContext';
 import { Agent } from '../data/agents';
 import { ProceduralAvatar } from './ProceduralAvatar';
 import { generateAvatarDataUrl, AvatarStyle } from '../utils/avatarUtils';
-import { createDeckProtocolPayload, bindAgentToOwner, serializeOwnerBinding } from '../utils/protocol';
+import { createDeckProtocolPayload } from '../utils/protocol';
 import { ensureAgentMemoryVault } from '../services/memoryVault';
 import { useModalA11y } from '../hooks/useModalA11y';
 
@@ -144,6 +144,13 @@ export function AgentCreatorModal() {
   const buildAgent = (portrait: string): { agent: Agent; privateKeyHex: string } => {
     const name = agentName.trim().toUpperCase();
     const serial = Date.now();
+
+    // Mandatory owner binding: every agent created here is delegation-bound,
+    // at creation time, to this installation's 01Protocol owner identity
+    // (enrolled on first use) so it can always be traced back to the human
+    // who created it. createDeckProtocolPayload requires `owner` and does
+    // the binding + verification internally — see src/app/utils/protocol.ts.
+    const owner = ensureOwnerIdentity();
     const protocol = createDeckProtocolPayload({
       name,
       role: agentRole || '01 Protocol Agent Ambassador',
@@ -152,16 +159,7 @@ export function AgentCreatorModal() {
       serial: 1,
       totalSupply: 1,
       rarityLabel: 'common',
-    });
-
-    // Mandatory owner binding: every agent created here is delegation-bound
-    // to this installation's 01Protocol owner identity (enrolled on first
-    // use) so it can always be traced back to the human who created it.
-    const owner = ensureOwnerIdentity();
-    const ownerBinding = bindAgentToOwner({
-      owner: owner.identity,
-      ownerPrivateKeyHex: owner.privateKeyHex,
-      agent: protocol.protocolAgent,
+      owner,
     });
 
     return {
@@ -201,8 +199,9 @@ export function AgentCreatorModal() {
         identityRecord: protocol.identityRecord,
         bundleRecord: protocol.bundleRecord,
         verification: protocol.verification,
-        ownerDelegationRecord: serializeOwnerBinding(ownerBinding),
-        ownerInstanceId: owner.identity.instanceId,
+        ownerDelegationRecord: protocol.ownerDelegationRecord,
+        ownerRecord: protocol.ownerRecord,
+        ownerInstanceId: protocol.ownerInstanceId,
         systemPrompt: `You are ${name}. Your role is ${agentRole || '01 Protocol Agent Ambassador'}. Your goal is: ${agentGoal.trim()}.`,
       }
     };

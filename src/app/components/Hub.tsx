@@ -13,6 +13,19 @@ const socialLinks = [
   { icon: Mail, label: 'Email Support', href: 'mailto:info@01ai.ai', color: '#94a3b8' },
 ];
 
+// Three honest outcomes, not two: a self-signed record with no (or an
+// invalid) owner-binding delegation must read as visibly distinct from both
+// "Verified" and "Failed" — see src/app/utils/protocol.ts.
+function verificationTone(status: 'verified' | 'unbound' | 'unverified' | 'legacy' | undefined) {
+  if (status === 'verified') {
+    return { background: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.35)', color: '#86efac' };
+  }
+  if (status === 'unbound') {
+    return { background: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)', color: '#fde047' };
+  }
+  return { background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.35)', color: '#fca5a5' };
+}
+
 export function Hub() {
   const {
     currentTheme: t,
@@ -28,6 +41,7 @@ export function Hub() {
     addBoardPost,
     tradeProposals,
     createTradeProposal,
+    ownerIdentity,
   } = useApp();
   const [tab, setTab] = useState<HubTab>('social');
   const [selectedAgentId, setSelectedAgentId] = useState(allAgents[0]?.id ?? '');
@@ -48,11 +62,11 @@ export function Hub() {
 
   const verifyAgent = () => {
     if (!selectedAgent) return;
-    setVerifyResult(verifyDeckAgent(selectedAgent));
+    setVerifyResult(verifyDeckAgent(selectedAgent, ownerIdentity?.identity ?? null));
   };
 
   const verifyImportPayload = () => {
-    setImportResult(parseDeckProtocolText(importPayload));
+    setImportResult(parseDeckProtocolText(importPayload, ownerIdentity?.identity ?? null));
   };
 
   const addImportedAgent = () => {
@@ -99,16 +113,25 @@ export function Hub() {
       memoryMode: 'always_on',
       serial: 1,
       totalSupply: 1,
-      isVerified: true,
+      // Honest status carried straight from the composed check that just
+      // ran in verifyImportPayload — self-consistency AND owner binding.
+      // A bare self-signed payload (no owner/ownerDelegation attached, or
+      // one that doesn't validate) lands here as 'unbound', never
+      // 'verified' — see parseDeckProtocolText in src/app/utils/protocol.ts.
+      isVerified: importResult.status === 'verified',
       identityRecord: importResult.identityRecord,
       bundleRecord: importResult.bundleRecord,
       verification: {
-        status: 'verified',
+        status: importResult.status,
         source: importResult.source === 'bundleRecord' ? 'bundle' : '01protocol',
         lastCheckedAt: new Date().toISOString(),
         warnings: importResult.warnings,
+        error: importResult.error,
         checksum: importResult.checksum,
+        boundOwnerName: importResult.boundOwnerName,
       },
+      ownerDelegationRecord: importResult.ownerDelegationRecord,
+      ownerRecord: importResult.ownerRecord,
       systemPrompt: descriptor,
     });
   };
@@ -310,9 +333,9 @@ export function Hub() {
                         <div
                           className="mt-3 p-3 rounded-xl text-xs"
                           style={{
-                            background: importResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                            border: `1px solid ${importResult.ok ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)'}`,
-                            color: importResult.ok ? '#86efac' : '#fca5a5',
+                            background: verificationTone(importResult.status).background,
+                            border: `1px solid ${verificationTone(importResult.status).border}`,
+                            color: verificationTone(importResult.status).color,
                           }}
                         >
                           <div>{importResult.summary}</div>
@@ -338,7 +361,7 @@ export function Hub() {
                               style={{ background: t.surface1, border: `1px solid ${t.border}`, color: t.text }}
                             >
                               <Plus size={12} />
-                              Add Verified Agent To Deck
+                              {importResult.status === 'verified' ? 'Add Verified Agent To Deck' : 'Add Self-Signed Agent To Deck'}
                             </button>
                           )}
                         </div>
@@ -348,12 +371,12 @@ export function Hub() {
                       <div
                         className="mt-3 p-3 rounded-xl text-xs"
                         style={{
-                          background: verifyResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                          border: `1px solid ${verifyResult.ok ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)'}`,
-                          color: verifyResult.ok ? '#86efac' : '#fca5a5',
+                          background: verificationTone(verifyResult.status).background,
+                          border: `1px solid ${verificationTone(verifyResult.status).border}`,
+                          color: verificationTone(verifyResult.status).color,
                         }}
                       >
-                        <div style={{ color: verifyResult.ok ? '#86efac' : '#fca5a5' }}>
+                        <div style={{ color: verificationTone(verifyResult.status).color }}>
                           {verifyResult.summary}
                         </div>
                         <div className="mt-2 space-y-1" style={{ color: t.textMuted }}>
