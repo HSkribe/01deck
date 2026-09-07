@@ -23,15 +23,35 @@ function set(f: FieldState, value: string): FieldState {
 }
 
 // ---- Validation helpers ----
+// Keep in sync with AuthContext.signup()'s server-side (well, "server-side"
+// — this is a client-only app today) checks; this copy is UX-only, the
+// AuthContext copy is what's actually enforced.
+const USERNAME_MAX_LENGTH = 64;
+
 function validateUsername(v: string): string | null {
   if (v.length < 3) return 'At least 3 characters';
+  if (v.length > USERNAME_MAX_LENGTH) return `At most ${USERNAME_MAX_LENGTH} characters`;
   if (!/^[a-z0-9_]+$/i.test(v)) return 'Letters, numbers, and underscores only';
   return null;
 }
 
+function passwordComplexityScore(v: string): number {
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/];
+  return classes.filter(re => re.test(v)).length;
+}
+
 function validatePassword(v: string): string | null {
-  if (v.length < 6) return 'At least 6 characters';
+  if (v.length < 8) return 'At least 8 characters';
+  if (passwordComplexityScore(v) < 2) return 'Mix in uppercase, numbers, or symbols';
   return null;
+}
+
+// Cryptographically-random id generator — Math.random() is not suitable for
+// anything identity-adjacent, including throwaway guest credentials.
+function generateSecureId(byteLength = 8): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ---- Shared input style ----
@@ -123,9 +143,9 @@ export function AuthModal() {
   const handleGuest = async () => {
     if (guestRef.current) return;
     guestRef.current = true;
-    const suffix = Math.random().toString(36).slice(2, 6);
+    const suffix = generateSecureId(4);
     const guestUsername = 'guest_' + suffix;
-    await signupFn(guestUsername, 'Agent Guest', Math.random().toString(36).slice(2, 14));
+    await signupFn(guestUsername, 'Agent Guest', generateSecureId(16));
   };
 
   // ---- Shared show-error logic ----
@@ -253,6 +273,7 @@ export function AuthModal() {
                 style={inputStyle}
                 placeholder="Username"
                 autoComplete="username"
+                maxLength={USERNAME_MAX_LENGTH}
                 value={siUsername.value}
                 onChange={e => setSiUsername(set(siUsername, e.target.value))}
                 onBlur={() => siUsername.value.trim() && setSiUsername(touch(siUsername))}
@@ -310,6 +331,7 @@ export function AuthModal() {
                 style={inputStyle}
                 placeholder="Username (letters, numbers, underscores)"
                 autoComplete="username"
+                maxLength={USERNAME_MAX_LENGTH}
                 value={suUsername.value}
                 onChange={e => setSuUsername(set(suUsername, e.target.value.toLowerCase()))}
                 onBlur={() => setSuUsername(touch(suUsername))}
@@ -334,7 +356,7 @@ export function AuthModal() {
               <input
                 type="password"
                 style={inputStyle}
-                placeholder="Password (min 6 characters)"
+                placeholder="Password (min 8 chars, mix in a number or symbol)"
                 autoComplete="new-password"
                 value={suPassword.value}
                 onChange={e => setSuPassword(set(suPassword, e.target.value))}
