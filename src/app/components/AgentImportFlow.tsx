@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Eye, Trash2, CheckCircle, AlertCircle, FolderOpen } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Agent } from '../data/agents';
+import { useModalA11y } from '../hooks/useModalA11y';
+import { ModalPortal } from './ui/ModalPortal';
 
 interface FoundAgent {
   id: string;
@@ -23,6 +25,8 @@ export function AgentImportFlow() {
     setShowAgentImport(false);
     setStep('intro');
   };
+
+  const panelRef = useModalA11y<HTMLDivElement>({ isOpen: showAgentImport, onClose: handleClose });
 
   const handleFindAgents = () => {
     setStep('searching');
@@ -349,6 +353,7 @@ export function AgentImportFlow() {
   };
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {showAgentImport && (
         <motion.div
@@ -360,7 +365,12 @@ export function AgentImportFlow() {
           onClick={handleClose}
         >
           <motion.div
-            className="relative rounded-2xl shadow-2xl overflow-hidden"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Import agents"
+            tabIndex={-1}
+            className="relative rounded-2xl shadow-2xl overflow-hidden focus:outline-none"
             style={{
               background: t.surface1,
               border: `1px solid ${t.border}`,
@@ -387,5 +397,6 @@ export function AgentImportFlow() {
         </motion.div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

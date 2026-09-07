@@ -183,9 +183,20 @@ export function ActiveAgentPanel() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  // Navigating away from chat via these shortcuts used to leave the chat
+  // panel open on top of the section just opened (it renders at a higher
+  // z-index than Hub/Arcade), silently intercepting clicks meant for that
+  // section underneath it. Closing chat as part of the navigation avoids
+  // the two panels ever competing for the same clicks.
   const navTo = (section: string | null) => {
+    setIsChatOpen(false);
     setHubInitialView(section);
     setShowHub(true);
+  };
+
+  const goToArcade = () => {
+    setIsChatOpen(false);
+    setIsArcadeOpen(true);
   };
 
   const isActive = isOverFab || isOverPanel;
@@ -203,7 +214,7 @@ export function ActiveAgentPanel() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 20 }}
             transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
-            className="fixed z-[200] rounded-2xl"
+            className="fixed z-40 rounded-2xl"
             style={{
               left: position.x,
               top: position.y,
@@ -401,7 +412,7 @@ export function ActiveAgentPanel() {
                         Go to:
                       </span>
                       {[
-                        { icon: Gamepad2, label: 'Arcade', color: '#a855f7', action: () => setIsArcadeOpen(true) },
+                        { icon: Gamepad2, label: 'Arcade', color: '#a855f7', action: goToArcade },
                         { icon: BookOpen, label: 'Learn', color: '#06b6d4', action: () => navTo('learn') },
                         { icon: Library, label: 'Library', color: '#10b981', action: () => navTo('library') },
                         { icon: Users, label: 'Hub', color: '#a855f7', action: () => navTo(null) },

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Hash, TrendingUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Agent } from '../data/agents';
+import { useModalA11y } from '../hooks/useModalA11y';
+import { ModalPortal } from './ui/ModalPortal';
 
 interface RarityInfoModalProps {
   agent: Agent;
@@ -12,6 +14,7 @@ interface RarityInfoModalProps {
 
 export function RarityInfoModal({ agent, isOpen, onClose }: RarityInfoModalProps) {
   const { currentTheme: t } = useApp();
+  const panelRef = useModalA11y<HTMLDivElement>({ isOpen, onClose });
 
   if (!isOpen) return null;
 
@@ -21,6 +24,7 @@ export function RarityInfoModal({ agent, isOpen, onClose }: RarityInfoModalProps
     : [agent.serial?.toString() || '?', agent.totalSupply?.toString() || '?'];
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         className="fixed inset-0 z-[110] flex items-center justify-center"
@@ -31,7 +35,12 @@ export function RarityInfoModal({ agent, isOpen, onClose }: RarityInfoModalProps
         onClick={onClose}
       >
         <motion.div
-          className="relative rounded-xl shadow-2xl overflow-hidden"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${agent.name} rarity info`}
+          tabIndex={-1}
+          className="relative rounded-xl shadow-2xl overflow-hidden focus:outline-none"
           style={{
             background: t.surface1,
             border: `2px solid ${t.border}`,
@@ -140,5 +149,6 @@ export function RarityInfoModal({ agent, isOpen, onClose }: RarityInfoModalProps
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

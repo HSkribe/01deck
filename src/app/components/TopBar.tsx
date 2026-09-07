@@ -2,13 +2,11 @@ import React, { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BookOpen,
-  Camera,
   Dna,
-  FileText,
   Gamepad2,
   Globe,
   Library,
-  Mail,
+  Menu,
   MessageSquare,
   Music,
   Package2,
@@ -16,12 +14,11 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  UserCircle2,
   User,
   Wifi,
   WifiOff,
-  RefreshCw,
   HelpCircle,
+  X,
 } from 'lucide-react';
 import { useApp, type WorkspaceSectionId } from '../context/AppContext';
 import logoImg from '../assets/logo-wordmark.svg';
@@ -74,7 +71,7 @@ function ProfileAvatarButton() {
         type="button"
         onClick={() => setShowProfile(true)}
         aria-label="Open your profile"
-        className="relative w-8 h-8 rounded-full overflow-hidden flex items-center justify-center"
+        className="relative w-8 h-8 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
         style={{
           border: `1px solid ${t.accent}66`,
           background: userAvatarUrl
@@ -127,6 +124,13 @@ export function TopBar() {
     setShowPlugins(false);
   }, []);
   const pluginMenuRef = useDismissableMenu<HTMLDivElement>(showPlugins || showPluginInfo, closePluginPanels);
+
+  // Below the `lg` breakpoint the inline nav items (Deck/Deploy/Arcade/...)
+  // are hidden entirely with no other way to reach those sections — this is
+  // the mobile/narrow-viewport nav that replaces them, reachable via the
+  // hamburger button below.
+  const [showMobileNav, setShowMobileNav] = useState(false);
+  const mobileNavRef = useDismissableMenu<HTMLDivElement>(showMobileNav, () => setShowMobileNav(false));
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
   const displayContext = useMemo(
     () => (showEvolutionLab ? pageContext : pageContextBySection[workspaceSection]),
@@ -155,16 +159,133 @@ export function TopBar() {
         backdropFilter: 'blur(12px)',
       }}
     >
-      <div className="flex items-center gap-3 min-w-[200px]">
+      <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+        {!SERIOUS_PRODUCT_MODE && (
+          <div className="relative lg:hidden flex-shrink-0" ref={mobileNavRef}>
+            <motion.button
+              type="button"
+              onClick={() => setShowMobileNav(open => !open)}
+              aria-haspopup="true"
+              aria-expanded={showMobileNav}
+              aria-label={showMobileNav ? 'Close navigation menu' : 'Open navigation menu'}
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{
+                background: showMobileNav ? t.surface3 : 'transparent',
+                border: `1px solid ${showMobileNav ? t.accent : t.border}`,
+                color: t.text,
+              }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {showMobileNav ? <X size={15} /> : <Menu size={15} />}
+            </motion.button>
+
+            <AnimatePresence>
+              {showMobileNav && (
+                <motion.div
+                  role="menu"
+                  aria-label="Sections"
+                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-2 w-[220px] rounded-2xl p-2 z-50 flex flex-col gap-1"
+                  style={{
+                    background: t.surface2,
+                    border: `1px solid ${t.border}`,
+                    boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+                  }}
+                >
+                  {navItems.map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        handleNavSelect(item.id);
+                        setShowMobileNav(false);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm"
+                      style={{
+                        background: workspaceSection === item.id ? `${t.accent}16` : 'transparent',
+                        border: `1px solid ${workspaceSection === item.id ? t.accent : 'transparent'}`,
+                        color: workspaceSection === item.id ? t.text : t.textMuted,
+                      }}
+                    >
+                      <item.icon size={14} />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                  <div className="my-1 border-t" style={{ borderColor: t.border }} />
+                  {IS_DECK_PRODUCT && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closePluginPanels();
+                        setShowMobileNav(false);
+                        setShowCreateImport(true);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm"
+                      style={{ color: t.textMuted }}
+                    >
+                      <Plus size={14} />
+                      <span>Create/Import</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closePluginPanels();
+                      setShowMobileNav(false);
+                      setIsOpsOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm"
+                    style={{ color: t.textMuted }}
+                  >
+                    <ShieldCheck size={14} />
+                    <span>Hub</span>
+                  </button>
+                  {IS_DECK_PRODUCT && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closePluginPanels();
+                        setShowMobileNav(false);
+                        setIsChatOpen(true);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm"
+                      style={{ color: t.textMuted }}
+                    >
+                      <MessageSquare size={14} />
+                      <span>Chat</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closePluginPanels();
+                      setShowMobileNav(false);
+                      setIsThemeOpen(true);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm"
+                    style={{ color: t.textMuted }}
+                  >
+                    <Palette size={14} />
+                    <span>Skin</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         <img
           src={logoImg}
           alt="01AI.ai"
-          className="h-7 object-contain"
+          className="h-7 object-contain flex-shrink-0"
           style={{ filter: t.isDark ? 'invert(0)' : 'invert(1)' }}
         />
-        <div className="h-4 w-px" style={{ background: t.border }} />
-        <div className="flex flex-col min-w-0">
-          <span className="text-[10px] tracking-[0.22em] uppercase leading-none" style={{ color: t.text }}>
+        <div className="h-4 w-px flex-shrink-0 hidden sm:block" style={{ background: t.border }} />
+        <div className="flex-col min-w-0 hidden sm:flex">
+          <span className="text-[10px] tracking-[0.22em] uppercase leading-none truncate" style={{ color: t.text }}>
             {displayContext.title}
           </span>
           <span className="text-[9px] tracking-[0.12em] uppercase truncate" style={{ color: t.textMuted }}>
@@ -173,9 +294,10 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Nav Items - Directly on TopBar */}
+      {/* Nav Items - Directly on TopBar (desktop only; see the hamburger
+          menu above for the same sections at narrower widths) */}
       {!SERIOUS_PRODUCT_MODE && (
-        <div className="hidden lg:flex items-center gap-1.5 ml-2">
+        <div className="hidden lg:flex items-center gap-1.5 ml-2 flex-shrink-0">
           {navItems.map(item => (
             <motion.button
               key={item.id}
@@ -197,22 +319,22 @@ export function TopBar() {
       )}
 
       {/* Search Bar */}
-      <div className="flex-1 max-w-[300px] mx-2">
+      <div className="flex-1 min-w-0 max-w-[300px] mx-2">
         {workspaceSection === 'deck' ? (
           <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg min-w-0"
             style={{
               background: t.surface2,
               border: `1px solid ${t.border}`,
             }}
           >
-            <Search size={14} style={{ color: t.textMuted }} />
+            <Search size={14} style={{ color: t.textMuted, flexShrink: 0 }} />
             <input
               type="text"
               placeholder="Search agents..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="flex-1 bg-transparent outline-none text-sm"
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm"
               style={{ color: t.text }}
             />
           </div>
@@ -234,11 +356,14 @@ export function TopBar() {
           clipped or squeezed illegible at narrower viewports (1280x720,
           1440x900) — every item here, including Skin, stays reachable both
           by mouse (drag/scroll) and by keyboard (Tab auto-scrolls the
-          focused button into view), rather than shrinking text to fit. */}
-      <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5">
+          focused button into view), rather than shrinking text to fit.
+          Below `sm` there's no longer room for this row next to the search
+          bar without one crowding out the other — Hub/Chat/Skin/Create are
+          reachable from the hamburger menu instead at that width. */}
+      <div className="hidden sm:flex items-center gap-2 overflow-x-auto flex-shrink min-w-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5">
       {IS_DECK_PRODUCT ? (
         <motion.button
-          onClick={() => setShowCreateImport(true)}
+          onClick={() => { closePluginPanels(); setShowCreateImport(true); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
           style={{
             background: `${t.accent}15`,
@@ -255,7 +380,7 @@ export function TopBar() {
 
       {IS_DECK_PRODUCT && evolutionPluginEnabled ? (
         <motion.button
-          onClick={() => setShowEvolutionLab(true)}
+          onClick={() => { closePluginPanels(); setShowEvolutionLab(true); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs relative overflow-hidden flex-shrink-0"
           style={{
             background: showEvolutionLab ? 'rgba(16,185,129,0.14)' : 'transparent',
@@ -418,7 +543,7 @@ export function TopBar() {
       ) : null}
 
       <motion.button
-        onClick={() => setIsOpsOpen(true)}
+        onClick={() => { closePluginPanels(); setIsOpsOpen(true); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
         style={{
           background: 'transparent',
@@ -444,7 +569,7 @@ export function TopBar() {
           act on it instead of just flipping a cosmetic flag. */}
       <motion.button
         type="button"
-        onClick={() => setIsChatOpen(true)}
+        onClick={() => { closePluginPanels(); setIsChatOpen(true); }}
         aria-label={
           chatResponseSource === 'local'
             ? 'Chat is running in simulated mode — open chat to connect a live model'
@@ -472,7 +597,7 @@ export function TopBar() {
 
       {IS_DECK_PRODUCT ? (
         <motion.button
-          onClick={() => setIsChatOpen(c => !c)}
+          onClick={() => { closePluginPanels(); setIsChatOpen(c => !c); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
           style={{
             background: isChatOpen ? `${t.accent}15` : 'transparent',
@@ -488,7 +613,7 @@ export function TopBar() {
       ) : null}
 
       <motion.button
-        onClick={() => setIsThemeOpen(true)}
+        onClick={() => { closePluginPanels(); setIsThemeOpen(true); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs flex-shrink-0"
         style={{
           background: 'transparent',
