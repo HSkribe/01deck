@@ -6,6 +6,7 @@ import { getActiveApiKey, generateAgentCompletion } from '../services/llmClient'
 import { DEFAULT_PAGE_CONTEXT, DEFAULT_WORKSPACE_SECTION } from '../utils/productMode';
 import { appendConversationMemory, deleteAgentMemoryVault, ensureAgentMemoryVault, getAgentMemoryContext } from '../services/memoryVault';
 import { enrollOwnerIdentity, type OwnerIdentityState } from '../utils/protocol';
+import { useAuth } from './AuthContext';
 
 export type ThemeId = 'core' | 'midnight' | 'holo' | 'clean' | 'solar';
 export type WorkspaceSectionId = 'foundry' | 'deck' | 'deploy' | 'arcade' | 'learn' | 'create' | 'library' | 'profile';
@@ -440,16 +441,56 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// Cosmetic, non-identity-bearing app preferences — shared per browser, not
+// per account. Nothing here is "your data" in the sense Task 3 cares about.
 const STORAGE_KEYS = {
   themeId: '01deck:theme-id',
-  userAgents: '01deck:user-agents',
-  onboardingComplete: '01deck:onboarding-complete',
   accentColor: '01deck:accent-color',
   densityMode: '01deck:density-mode',
-  userAvatarUrl: '01deck:user-avatar-url',
   pluginStates: '01deck:plugin-states',
+};
+
+// Per-user state — namespaced by the authenticated account's stable local id
+// (AuthContext's User.id) so switching/creating local accounts in the same
+// browser can no longer see or overwrite another account's agents, owner
+// identity, avatar, or onboarding progress. See buildUserScopedKey and
+// migrateLegacyGlobalValue below for how existing (pre-namespacing)
+// installations keep their data instead of it silently "disappearing".
+//
+// This only stops *same-browser* bleed between local accounts — it is not,
+// and cannot be, real cross-device/cross-browser isolation. That needs a
+// real backend and is out of scope here.
+const LEGACY_GLOBAL_KEYS = {
+  userAgents: '01deck:user-agents',
+  onboardingComplete: '01deck:onboarding-complete',
+  userAvatarUrl: '01deck:user-avatar-url',
   ownerIdentity: '01deck:owner-identity',
 };
+
+function buildUserScopedKey(base: string, namespace: string): string {
+  return `${base}:${namespace}`;
+}
+
+// One-time migration: the first account to load after this namespacing
+// change claims whatever was previously stored under the old global key (the
+// common case — most installations only ever had one local account), and
+// marks the legacy key claimed so a second/third account created afterward
+// starts empty instead of inheriting the first account's data. There is no
+// way to retroactively know which pre-existing account "owned" which agent
+// if more than one account already existed before this change — that
+// ambiguity is an inherent limit of retrofitting isolation onto previously
+// shared data, not something this migration can resolve.
+function migrateLegacyGlobalValue(legacyKey: string, namespacedKey: string): void {
+  if (typeof window === 'undefined') return;
+  const migratedFlagKey = `${legacyKey}:claimed`;
+  if (window.localStorage.getItem(migratedFlagKey)) return;
+
+  const legacyValue = window.localStorage.getItem(legacyKey);
+  if (legacyValue !== null && window.localStorage.getItem(namespacedKey) === null) {
+    window.localStorage.setItem(namespacedKey, legacyValue);
+  }
+  window.localStorage.setItem(migratedFlagKey, '1');
+}
 
 function readStoredTheme(): ThemeId {
   if (typeof window === 'undefined') return 'core';
@@ -457,9 +498,11 @@ function readStoredTheme(): ThemeId {
   return stored && stored in themes ? (stored as ThemeId) : 'core';
 }
 
-function readStoredOnboardingState(): boolean {
+function readStoredOnboardingState(namespace: string): boolean {
   if (typeof window === 'undefined') return true;
-  return window.localStorage.getItem(STORAGE_KEYS.onboardingComplete) !== 'true';
+  const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.onboardingComplete, namespace);
+  migrateLegacyGlobalValue(LEGACY_GLOBAL_KEYS.onboardingComplete, key);
+  return window.localStorage.getItem(key) !== 'true';
 }
 
 function readStoredAccentColor(): string | null {
@@ -496,9 +539,11 @@ function deserializeAgent(value: unknown): Agent | null {
   };
 }
 
-function readStoredUserAvatarUrl(): string | null {
+function readStoredUserAvatarUrl(namespace: string): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(STORAGE_KEYS.userAvatarUrl);
+  const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.userAvatarUrl, namespace);
+  migrateLegacyGlobalValue(LEGACY_GLOBAL_KEYS.userAvatarUrl, key);
+  return window.localStorage.getItem(key);
 }
 
 // The owner identity's private key is persisted alongside its public
@@ -506,9 +551,11 @@ function readStoredUserAvatarUrl(): string | null {
 // (see src/app/utils/protocol.ts / userAgents below) — everything here is
 // local-only, client-side state with no server round-trip, so it sits in the
 // same trust boundary as the rest of localStorage.
-function readStoredOwnerIdentity(): OwnerIdentityState | null {
+function readStoredOwnerIdentity(namespace: string): OwnerIdentityState | null {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(STORAGE_KEYS.ownerIdentity);
+  const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.ownerIdentity, namespace);
+  migrateLegacyGlobalValue(LEGACY_GLOBAL_KEYS.ownerIdentity, key);
+  const raw = window.localStorage.getItem(key);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as OwnerIdentityState;
@@ -518,9 +565,11 @@ function readStoredOwnerIdentity(): OwnerIdentityState | null {
   }
 }
 
-function readStoredAgents(): Agent[] {
+function readStoredAgents(namespace: string): Agent[] {
   if (typeof window === 'undefined') return [];
-  const raw = window.localStorage.getItem(STORAGE_KEYS.userAgents);
+  const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.userAgents, namespace);
+  migrateLegacyGlobalValue(LEGACY_GLOBAL_KEYS.userAgents, key);
+  const raw = window.localStorage.getItem(key);
   if (!raw) return [];
 
   try {
@@ -535,6 +584,13 @@ function readStoredAgents(): Agent[] {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  // Per-user storage namespace — see LEGACY_GLOBAL_KEYS above. AppProvider
+  // only ever mounts once a user is authenticated (see src/main.tsx's
+  // AppRoot), so `user` is expected to be set here; the 'anonymous' fallback
+  // only guards the brief unmount/remount window around login/logout.
+  const { user } = useAuth();
+  const ownerNamespace = user?.id ?? 'anonymous';
+
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(readStoredTheme);
   const [accentColor, setAccentColor] = useState<string | null>(readStoredAccentColor);
   const [densityMode, setDensityMode] = useState<'compact' | 'default' | 'relaxed'>(readStoredDensityMode);
@@ -547,7 +603,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showEvolutionLab, setShowEvolutionLab] = useState(false);
   const [pluginStates, setPluginStates] = useState<Record<string, boolean>>(readStoredPluginStates);
   const [pageContext, setPageContext] = useState(DEFAULT_PAGE_CONTEXT);
-  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(readStoredUserAvatarUrl);
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(() => readStoredUserAvatarUrl(ownerNamespace));
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
   const [isCardVisible, setIsCardVisible] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -560,7 +616,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [isArcadeOpen, setIsArcadeOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(readStoredOnboardingState);
+  const [showOnboarding, setShowOnboarding] = useState(() => readStoredOnboardingState(ownerNamespace));
   const [showCreator, setShowCreator] = useState(false);
   const [showAgentImport, setShowAgentImport] = useState(false);
   const [showCreateImport, setShowCreateImport] = useState(false);
@@ -596,8 +652,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
   ]);
   const [tradeProposals, setTradeProposals] = useState<TradeProposal[]>([]);
-  const [userAgents, setUserAgents] = useState<Agent[]>(readStoredAgents);
-  const [ownerIdentity, setOwnerIdentity] = useState<OwnerIdentityState | null>(readStoredOwnerIdentity);
+  const [userAgents, setUserAgents] = useState<Agent[]>(() => readStoredAgents(ownerNamespace));
+  const [ownerIdentity, setOwnerIdentity] = useState<OwnerIdentityState | null>(() => readStoredOwnerIdentity(ownerNamespace));
 
   const setThemeId = useCallback((id: ThemeId) => {
     setCurrentThemeId(id);
@@ -1031,31 +1087,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_KEYS.userAgents, JSON.stringify(userAgents));
-  }, [userAgents]);
+    window.localStorage.setItem(buildUserScopedKey(LEGACY_GLOBAL_KEYS.userAgents, ownerNamespace), JSON.stringify(userAgents));
+  }, [userAgents, ownerNamespace]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.ownerIdentity, ownerNamespace);
     if (ownerIdentity) {
-      window.localStorage.setItem(STORAGE_KEYS.ownerIdentity, JSON.stringify(ownerIdentity));
+      window.localStorage.setItem(key, JSON.stringify(ownerIdentity));
     } else {
-      window.localStorage.removeItem(STORAGE_KEYS.ownerIdentity);
+      window.localStorage.removeItem(key);
     }
-  }, [ownerIdentity]);
+  }, [ownerIdentity, ownerNamespace]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_KEYS.onboardingComplete, String(!showOnboarding));
-  }, [showOnboarding]);
+    window.localStorage.setItem(buildUserScopedKey(LEGACY_GLOBAL_KEYS.onboardingComplete, ownerNamespace), String(!showOnboarding));
+  }, [showOnboarding, ownerNamespace]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const key = buildUserScopedKey(LEGACY_GLOBAL_KEYS.userAvatarUrl, ownerNamespace);
     if (userAvatarUrl) {
-      window.localStorage.setItem(STORAGE_KEYS.userAvatarUrl, userAvatarUrl);
+      window.localStorage.setItem(key, userAvatarUrl);
     } else {
-      window.localStorage.removeItem(STORAGE_KEYS.userAvatarUrl);
+      window.localStorage.removeItem(key);
     }
-  }, [userAvatarUrl]);
+  }, [userAvatarUrl, ownerNamespace]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
