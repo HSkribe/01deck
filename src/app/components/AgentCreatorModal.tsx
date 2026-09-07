@@ -14,6 +14,7 @@ import { generateAvatarDataUrl, AvatarStyle } from '../utils/avatarUtils';
 import { createDeckProtocolPayload } from '../utils/protocol';
 import { ensureAgentMemoryVault } from '../services/memoryVault';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { ModalPortal } from './ui/ModalPortal';
 
 const GEN_STEPS = [
   { label: 'Initializing 01 Protocol v3.0', duration: 500 },
@@ -267,6 +268,7 @@ export function AgentCreatorModal() {
   if (!showCreator) return null;
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         key="creator-backdrop"
@@ -822,5 +824,6 @@ export function AgentCreatorModal() {
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

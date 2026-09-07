@@ -6,7 +6,10 @@ import { useApp } from '../context/AppContext';
 import { categories } from '../data/categories';
 
 export function AgentList() {
-  const { agentList, currentTheme: t, selectedCategory, selectedRole, searchQuery, setShowEvolutionLab, isPluginEnabled } = useApp();
+  const {
+    agentList, currentTheme: t, selectedCategory, selectedRole, searchQuery, setShowEvolutionLab, isPluginEnabled,
+    setSearchQuery, setSelectedCategory, setSelectedRole,
+  } = useApp();
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
   const evolvableCount = agentList.filter(agent => agent.hasEvolution).length;
 
@@ -81,7 +84,16 @@ export function AgentList() {
       <div className="flex-1 overflow-y-auto pb-4">
         <AnimatePresence mode="popLayout">
           {agentList.length === 0 ? (
-            <EmptyState t={t} searchQuery={searchQuery} />
+            <EmptyState
+              t={t}
+              searchQuery={searchQuery}
+              hasActiveFilter={Boolean(searchQuery || selectedCategory || selectedRole)}
+              onClearFilters={() => {
+                setSearchQuery('');
+                setSelectedCategory(null);
+                setSelectedRole(null);
+              }}
+            />
           ) : (
             agentList.map((agent, index) => (
               <AgentBar key={agent.id} agent={agent} index={index} />
@@ -93,7 +105,17 @@ export function AgentList() {
   );
 }
 
-function EmptyState({ t, searchQuery }: { t: ReturnType<typeof useApp>['currentTheme']; searchQuery: string }) {
+function EmptyState({
+  t,
+  searchQuery,
+  hasActiveFilter,
+  onClearFilters,
+}: {
+  t: ReturnType<typeof useApp>['currentTheme'];
+  searchQuery: string;
+  hasActiveFilter: boolean;
+  onClearFilters: () => void;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -115,16 +137,32 @@ function EmptyState({ t, searchQuery }: { t: ReturnType<typeof useApp>['currentT
           ? `No agents match "${searchQuery}". Try a different search term.`
           : 'This role category is empty. Agents can be added via the 01Protocol registry.'}
       </p>
-      <div
-        className="mt-6 px-4 py-2 rounded-lg text-xs"
-        style={{
-          background: t.surface1,
-          border: `1px solid ${t.border}`,
-          color: t.textMuted,
-        }}
-      >
-        01Protocol Registry · Browse Available Agents
-      </div>
+      {hasActiveFilter ? (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="mt-6 px-4 py-2 rounded-lg text-xs transition-colors"
+          style={{
+            background: t.surface1,
+            border: `1px solid ${t.border}`,
+            color: t.textMuted,
+            cursor: 'pointer',
+          }}
+        >
+          Clear filters and browse all agents
+        </button>
+      ) : (
+        <div
+          className="mt-6 px-4 py-2 rounded-lg text-xs"
+          style={{
+            background: t.surface1,
+            border: `1px solid ${t.border}`,
+            color: t.textMuted,
+          }}
+        >
+          01Protocol Registry · Browse Available Agents
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, UserPlus, Gamepad2, BookOpen, HelpCircle, GraduationCap, Download, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { ModalPortal } from './ui/ModalPortal';
 
 interface Option {
   id: string;
@@ -65,6 +66,7 @@ export function CreateImportModal({ isOpen, onClose }: { isOpen: boolean; onClos
   if (!isOpen) return null;
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -195,5 +197,6 @@ export function CreateImportModal({ isOpen, onClose }: { isOpen: boolean; onClos
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }

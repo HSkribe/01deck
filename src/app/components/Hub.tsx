@@ -1,15 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, Download, Link2, MessageSquare, Plus, ShieldCheck, Store, X, Globe, FileText, Mail, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Download, Link2, MessageSquare, Plus, ShieldCheck, Store, X, Globe, Mail, ExternalLink } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { parseDeckProtocolText, verifyDeckAgent } from '../utils/protocol';
 import { generateAvatarDataUrl } from '../utils/avatarUtils';
 
 type HubTab = 'social' | 'verify' | 'messages' | 'board' | 'trade' | 'links';
 
+// "01AI Updates" used to sit here pointing at the exact same URL as
+// "01AI Website" below — a dead-looking duplicate rather than a real
+// changelog/blog destination. No such distinct destination exists anywhere
+// else in the codebase, so it's removed rather than shipped as a duplicate.
 const socialLinks = [
   { icon: Globe, label: '01AI Website', href: 'https://01ai.ai', color: '#6384ff' },
-  { icon: FileText, label: '01AI Updates', href: 'https://01ai.ai', color: '#22c55e' },
   { icon: Mail, label: 'Email Support', href: 'mailto:info@01ai.ai', color: '#94a3b8' },
 ];
 
@@ -55,10 +58,20 @@ export function Hub() {
   const [tradeUser, setTradeUser] = useState('');
   const [tradeAgent, setTradeAgent] = useState(allAgents[0]?.name ?? '');
   const [tradeCredits, setTradeCredits] = useState(100);
+  const [tradeFeedback, setTradeFeedback] = useState<string | null>(null);
   const selectedAgent = useMemo(
     () => allAgents.find(a => a.id === selectedAgentId) ?? allAgents[0] ?? null,
     [allAgents, selectedAgentId],
   );
+
+  // Scrolls the "Verify Integrity" result into view once it renders — it
+  // otherwise lands below the fold with no indication anything happened.
+  const verifyResultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (verifyResult) {
+      verifyResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [verifyResult]);
 
   const verifyAgent = () => {
     if (!selectedAgent) return;
@@ -216,7 +229,10 @@ export function Hub() {
               <div className="p-4 overflow-y-auto">
                 {tab === 'social' && (
                   <div>
-                    <h3 className="text-sm mb-3" style={{ color: t.text }}>Social Connections</h3>
+                    <h3 className="text-sm mb-1.5" style={{ color: t.text }}>Social Connections</h3>
+                    <p className="text-xs mb-3" style={{ color: t.textMuted }}>
+                      Simulated for this preview build — toggling a platform here doesn't perform any real OAuth or API connection.
+                    </p>
                     {Object.keys(socialConnections).map(platform => {
                       const connected = socialConnections[platform];
                       return (
@@ -369,7 +385,8 @@ export function Hub() {
                     </div>
                     {verifyResult && (
                       <div
-                        className="mt-3 p-3 rounded-xl text-xs"
+                        ref={verifyResultRef}
+                        className="mt-3 p-3 rounded-xl text-xs scroll-mt-4"
                         style={{
                           background: verificationTone(verifyResult.status).background,
                           border: `1px solid ${verificationTone(verifyResult.status).border}`,
@@ -530,12 +547,28 @@ export function Hub() {
                       />
                     </div>
                     <button
-                      onClick={() => createTradeProposal(tradeUser, tradeAgent, tradeCredits)}
-                      className="mb-3 px-3 py-2 rounded-lg text-xs"
+                      onClick={() => {
+                        if (!tradeUser.trim()) {
+                          setTradeFeedback('Enter a recipient username first.');
+                          return;
+                        }
+                        createTradeProposal(tradeUser, tradeAgent, tradeCredits);
+                        setTradeFeedback(`Trade proposal sent to ${tradeUser.trim()} — this is a local simulation, not a real transfer.`);
+                        setTradeUser('');
+                      }}
+                      className="mb-2 px-3 py-2 rounded-lg text-xs"
                       style={{ background: `${t.accent}16`, border: `1px solid ${t.accent}`, color: t.text }}
                     >
                       Propose Trade
                     </button>
+                    {tradeFeedback && (
+                      <div
+                        className="mb-3 px-3 py-2 rounded-lg text-xs"
+                        style={{ background: t.surface1, border: `1px solid ${t.border}`, color: t.textMuted }}
+                      >
+                        {tradeFeedback}
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {tradeProposals.map(trade => (
                         <div key={trade.id} className="p-3 rounded-lg text-xs" style={{ background: t.surface1, border: `1px solid ${t.border}` }}>

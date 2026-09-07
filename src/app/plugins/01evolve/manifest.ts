@@ -6,6 +6,6 @@ export const evolutionExperiencePluginManifest: AppPluginManifest = {
   version: '0.1.0',
   category: 'fun',
   description: 'Optional Synaptic Bridge UI, lineage theatre, and care-oriented companion mechanics for agent evolution.',
-  defaultEnabled: false,
+  defaultEnabled: true,
   surfaces: ['topbar', 'agent-list', 'agent-row', 'overlay'],
 };

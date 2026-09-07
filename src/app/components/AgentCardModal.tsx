@@ -6,6 +6,7 @@ import { rarityConfig, Agent } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
 import logoMark from '../assets/logo-mark.svg';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { ModalPortal } from './ui/ModalPortal';
 
 function formatLastUsed(date: Date): string {
   const diff = Date.now() - date.getTime();
@@ -488,6 +489,7 @@ export function AgentCardModal() {
   const config = rarityConfig[activeAgent.rarity];
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isCardVisible && (
         <>
@@ -586,5 +588,6 @@ export function AgentCardModal() {
         </>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }
