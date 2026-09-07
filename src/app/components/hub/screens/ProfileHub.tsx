@@ -19,13 +19,19 @@ import {
 import { useApp } from '../../../context/AppContext';
 import { useAuth } from '../../../context/AuthContext';
 import { achievements, userStats } from '../../../data/hubData';
-
-const API_KEY_STORAGE = '01deck:api-keys';
+import {
+  ensureApiKeysLoaded,
+  getStoredApiKeysSync,
+  setApiKey as persistApiKey,
+  removeApiKey as deleteStoredApiKey,
+  type ApiKeyStore,
+} from '../../../utils/secureApiKeyStore';
 
 type ProfileView = 'overview' | 'options' | 'api';
 type ProviderId = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'grok' | 'mistral';
 
-type StoredApiKeys = Partial<Record<ProviderId, { key: string; updatedAt: string }>>;
+// Keys are encrypted at rest — see src/app/utils/secureApiKeyStore.ts.
+type StoredApiKeys = ApiKeyStore<ProviderId>;
 
 const providerOptions: Array<{
   id: ProviderId;
@@ -77,19 +83,6 @@ const providerOptions: Array<{
     portalUrl: 'https://console.mistral.ai/api-keys/',
   },
 ];
-
-function readStoredApiKeys(): StoredApiKeys {
-  if (typeof window === 'undefined') return {};
-
-  try {
-    const raw = window.localStorage.getItem(API_KEY_STORAGE);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as StoredApiKeys;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 function maskApiKey(value: string) {
   if (!value) return 'Not set';
@@ -150,7 +143,7 @@ export function ProfileHub() {
   const { currentTheme: t, userAvatarUrl, setUserAvatarUrl, setShowCreator } = useApp();
   const { user } = useAuth();
   const [view, setView] = React.useState<ProfileView>('overview');
-  const [apiKeys, setApiKeys] = React.useState<StoredApiKeys>(readStoredApiKeys);
+  const [apiKeys, setApiKeys] = React.useState<StoredApiKeys>({});
   const [selectedProvider, setSelectedProvider] = React.useState<ProviderId>('openai');
   const [draftApiKey, setDraftApiKey] = React.useState('');
   const [showProviderHelp, setShowProviderHelp] = React.useState(false);
@@ -174,10 +167,19 @@ export function ProfileHub() {
     legend: '#d4af37',
   };
 
+  // Keys are encrypted at rest, so the initial load is async — decrypt once
+  // on mount and hydrate local state from it. Saves/removals below write
+  // through the store directly rather than via a persistence effect, so
+  // this state is a read-through cache, not the source of truth.
   React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(API_KEY_STORAGE, JSON.stringify(apiKeys));
-  }, [apiKeys]);
+    let cancelled = false;
+    void ensureApiKeysLoaded().then(() => {
+      if (!cancelled) setApiKeys(getStoredApiKeysSync<ProviderId>());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!saveNotice) return;
@@ -201,23 +203,13 @@ export function ProfileHub() {
     const trimmed = draftApiKey.trim();
     if (!trimmed) return;
 
-    setApiKeys(prev => ({
-      ...prev,
-      [selectedProvider]: {
-        key: trimmed,
-        updatedAt: new Date().toISOString(),
-      },
-    }));
+    void persistApiKey(selectedProvider, trimmed).then(next => setApiKeys(next));
     setDraftApiKey('');
-    setSaveNotice(`${providerOptions.find(provider => provider.id === selectedProvider)?.label ?? 'Provider'} key saved locally.`);
+    setSaveNotice(`${providerOptions.find(provider => provider.id === selectedProvider)?.label ?? 'Provider'} key saved locally (encrypted at rest).`);
   };
 
   const removeApiKey = (providerId: ProviderId) => {
-    setApiKeys(prev => {
-      const next = { ...prev };
-      delete next[providerId];
-      return next;
-    });
+    void deleteStoredApiKey(providerId).then(next => setApiKeys(next));
     setSaveNotice(`${providerOptions.find(provider => provider.id === providerId)?.label ?? 'Provider'} key removed.`);
   };
 

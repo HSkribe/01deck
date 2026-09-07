@@ -1,24 +1,21 @@
+import { ensureApiKeysLoaded, getStoredApiKeysSync, type ApiKeyRecord } from '../utils/secureApiKeyStore';
+
 export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek';
 
-export interface StoredApiKeyRecord {
-  key: string;
-  updatedAt: string;
-}
-
+export type StoredApiKeyRecord = ApiKeyRecord;
 export type StoredApiKeys = Partial<Record<ProviderId, StoredApiKeyRecord>>;
 
-export const API_KEY_STORAGE = '01deck:api-keys';
-
+// Keys are encrypted at rest — see src/app/utils/secureApiKeyStore.ts. This
+// function stays synchronous (existing callers, including render-time reads
+// in AppContext, depend on that) by reading an in-memory cache that the
+// store keeps warm from module load; ensureApiKeysLoaded()/
+// getStoredApiKeysAsync() are available where callers can await the initial
+// decrypt instead of relying on the cache already being populated.
 export function getStoredApiKeys(): StoredApiKeys {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(API_KEY_STORAGE);
-    if (!raw) return {};
-    return JSON.parse(raw) as StoredApiKeys;
-  } catch {
-    return {};
-  }
+  return getStoredApiKeysSync<ProviderId>();
 }
+
+export { ensureApiKeysLoaded };
 
 export function getActiveApiKey(): { provider: ProviderId; key: string } | null {
   const keys = getStoredApiKeys();

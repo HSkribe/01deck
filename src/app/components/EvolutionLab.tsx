@@ -767,7 +767,12 @@ export function EvolutionLab() {
   const [agentA, setAgentA] = useState<Agent | null>(null);
   const [agentB, setAgentB] = useState<Agent | null>(null);
   const [pickerTarget, setPickerTarget] = useState<'A' | 'B' | null>(null);
-  const [inviteCode] = useState(() => Math.random().toString(36).slice(2, 10));
+  // Math.random() is not appropriate for anything that functions as a
+  // sharable code/id — crypto.getRandomValues instead.
+  const [inviteCode] = useState(() => {
+    const bytes = crypto.getRandomValues(new Uint8Array(6));
+    return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 8);
+  });
   const [careExpanded, setCareExpanded] = useState(false);
   const [careAction, setCareAction] = useState<CareAction>(null);
   const [carePreview, setCarePreview] = useState<CareState | null>(null);
