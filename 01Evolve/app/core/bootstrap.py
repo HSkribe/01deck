@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.core.accounts.service import AccountService
 from app.core.agents.service import AgentService
+from app.core.bosun.service import BosunService
 from app.core.evaluation.service import EvaluationService
 from app.core.evolution.service import EvolutionService
 from app.core.evolution.support_service import SupportOptimizationService
@@ -24,6 +25,7 @@ class ServiceContainer:
     evolution: EvolutionService
     support: SupportOptimizationService
     accounts: AccountService
+    bosun: BosunService
 
 
 def build_services(db_url: str | None = None, plugin_config_path: str | Path | None = None) -> ServiceContainer:
@@ -40,6 +42,7 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
     )
     support = SupportOptimizationService(repository, agent_service=agents)
     accounts = AccountService(repository)
+    bosun = BosunService(repository)
     return ServiceContainer(
         repository=repository,
         lifecycle=lifecycle,
@@ -49,4 +52,5 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
         evolution=evolution,
         support=support,
         accounts=accounts,
+        bosun=bosun,
     )

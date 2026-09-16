@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 from app.core.persistence.models import (
     AgentRecord,
     BaselineProfileRecord,
+    BosunConversationTurnRecord,
+    BosunCoreKnowledgeRecord,
+    BosunSharedMemoryRecord,
+    BosunUserMemoryRecord,
     ConfigRecord,
     EvaluationRunRecord,
     EvaluationSuiteRecord,
@@ -30,6 +34,8 @@ from app.core.schemas.models import (
     AccountPublic,
     AgentRead,
     BaselineProfile,
+    BosunSharedMemoryProposal,
+    BosunUserMemory,
     EvaluationRunRead,
     EvaluationSuiteConfig,
     LifecycleEventRead,
@@ -712,3 +718,98 @@ class Repository:
             )
             for item in evaluations
         ]
+
+    # -----------------------------------------------------------------
+    # Bosun memory tiers — see app/core/bosun/service.py for the tier
+    # semantics (core knowledge / shared / per-user / raw turns).
+    # -----------------------------------------------------------------
+
+    def get_bosun_core_knowledge(self) -> list[str]:
+        rows = self.session.scalars(select(BosunCoreKnowledgeRecord).order_by(BosunCoreKnowledgeRecord.key)).all()
+        return [row.content for row in rows]
+
+    def upsert_bosun_core_knowledge(self, key: str, content: str) -> None:
+        row = self.session.scalar(select(BosunCoreKnowledgeRecord).where(BosunCoreKnowledgeRecord.key == key))
+        if row:
+            row.content = content
+        else:
+            self.session.add(BosunCoreKnowledgeRecord(key=key, content=content))
+        self.session.commit()
+
+    def create_bosun_shared_memory_proposal(self, memory_id: str, content: str, source_account_id: str | None) -> None:
+        self.session.add(
+            BosunSharedMemoryRecord(memory_id=memory_id, content=content, source_account_id=source_account_id)
+        )
+        self.session.commit()
+
+    def get_approved_bosun_shared_memories(self) -> list[BosunSharedMemoryProposal]:
+        rows = self.session.scalars(
+            select(BosunSharedMemoryRecord).where(BosunSharedMemoryRecord.status == "approved")
+        ).all()
+        return [self._decode_shared_memory(row) for row in rows]
+
+    def _decode_shared_memory(self, row: BosunSharedMemoryRecord) -> BosunSharedMemoryProposal:
+        return BosunSharedMemoryProposal(
+            memory_id=row.memory_id,
+            content=row.content,
+            source_account_id=row.source_account_id,
+            status=row.status,
+            created_at=row.created_at,
+            reviewed_at=row.reviewed_at,
+        )
+
+    def list_pending_bosun_shared_memories(self) -> list[BosunSharedMemoryProposal]:
+        rows = self.session.scalars(
+            select(BosunSharedMemoryRecord).where(BosunSharedMemoryRecord.status == "pending").order_by(BosunSharedMemoryRecord.id)
+        ).all()
+        return [self._decode_shared_memory(row) for row in rows]
+
+    def review_bosun_shared_memory(self, memory_id: str, approve: bool) -> BosunSharedMemoryProposal | None:
+        row = self.session.scalar(select(BosunSharedMemoryRecord).where(BosunSharedMemoryRecord.memory_id == memory_id))
+        if not row:
+            return None
+        row.status = "approved" if approve else "rejected"
+        row.reviewed_at = utc_now()
+        self.session.commit()
+        return self._decode_shared_memory(row)
+
+    def add_bosun_user_memory(self, account_id: str, content: str, max_per_account: int) -> None:
+        self.session.add(BosunUserMemoryRecord(account_id=account_id, content=content))
+        self.session.commit()
+        # Prune oldest-first so storage grows with user count, not message
+        # volume — see BosunUserMemoryRecord's docstring.
+        rows = self.session.scalars(
+            select(BosunUserMemoryRecord)
+            .where(BosunUserMemoryRecord.account_id == account_id)
+            .order_by(desc(BosunUserMemoryRecord.id))
+        ).all()
+        for stale in rows[max_per_account:]:
+            self.session.delete(stale)
+        self.session.commit()
+
+    def get_bosun_user_memories(self, account_id: str) -> list[BosunUserMemory]:
+        rows = self.session.scalars(
+            select(BosunUserMemoryRecord)
+            .where(BosunUserMemoryRecord.account_id == account_id)
+            .order_by(BosunUserMemoryRecord.id)
+        ).all()
+        return [BosunUserMemory(content=row.content, created_at=row.created_at) for row in rows]
+
+    def delete_bosun_user_memories(self, account_id: str) -> None:
+        self.session.execute(delete(BosunUserMemoryRecord).where(BosunUserMemoryRecord.account_id == account_id))
+        self.session.commit()
+
+    def record_bosun_turn(self, account_id: str, role: str, content: str) -> None:
+        self.session.add(BosunConversationTurnRecord(account_id=account_id, role=role, content=content))
+        self.session.commit()
+
+    def get_recent_bosun_turns(self, account_id: str, limit: int) -> list[tuple[str, str]]:
+        """Most recent turns first is what callers want for relevance scoring;
+        returned oldest-first so it reads naturally when replayed into a prompt."""
+        rows = self.session.scalars(
+            select(BosunConversationTurnRecord)
+            .where(BosunConversationTurnRecord.account_id == account_id)
+            .order_by(desc(BosunConversationTurnRecord.id))
+            .limit(limit)
+        ).all()
+        return [(row.role, row.content) for row in reversed(rows)]

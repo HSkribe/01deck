@@ -28,6 +28,7 @@ from app.api.security import (
     secure_cookie_settings,
 )
 from app.core.accounts.service import AccountError
+from app.core.bosun.service import BosunNotConfiguredError
 from app.core.bootstrap import build_services
 from app.core.llm.adapters import OpenAICompatibleAdapter
 from app.core.lineage.service import LineageService
@@ -58,6 +59,7 @@ async def add_security_headers(request: Request, call_next):
         request.url.path.startswith("/auth/")
         or request.url.path.startswith("/chat/")
         or request.url.path.startswith("/account/")
+        or request.url.path.startswith("/bosun/")
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -151,6 +153,26 @@ class AccountLoginRequest(BaseModel):
 
 class AccountXpAwardRequest(BaseModel):
     amount: int = Field(ge=-100_000, le=100_000)
+
+
+class BosunChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    # Both default false and are mutually independent: a user explicitly
+    # opts in to Bosun remembering something about them personally, and/or
+    # proposing it as shared knowledge for everyone (which still needs
+    # separate admin approval — see BosunService/review_bosun_shared_memory).
+    # Nothing is remembered just from asking a question.
+    remember_about_me: bool = False
+    remember_for_everyone: bool = False
+
+
+class BosunSharedMemoryReviewRequest(BaseModel):
+    approve: bool
+
+
+class BosunCoreKnowledgeUpsertRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class ChatMessagePayload(BaseModel):
@@ -317,6 +339,94 @@ async def proxy_chat_completion(payload: ChatProxyRequest, request: Request):
     except Exception as exc:  # pragma: no cover - network/provider dependent
         raise HTTPException(status_code=502, detail="chat provider request failed") from exc
     return ChatProxyResponse(text=result.text, model=model_name)
+
+
+def _require_bosun_admin(request: Request) -> None:
+    """Placeholder admin gate until real account roles exist: holding the
+    master beta bearer token (not a beta session cookie, not an account
+    session) is treated as admin access to Bosun's shared-memory approval
+    queue. Replace with real per-account roles before this matters at scale."""
+    expected = get_beta_access_token()
+    auth_header = request.headers.get("authorization", "")
+    if expected and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token and secrets_compare(token, expected):
+            return
+    raise HTTPException(status_code=403, detail="admin access required")
+
+
+@api.post("/bosun/chat")
+async def bosun_chat(payload: BosunChatRequest, request: Request):
+    require_api_access(request)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="sign in to talk to Bosun")
+
+    # Bosun is one shared identity everyone talks to through this
+    # deployment's own key (never bring-your-own-key) — so unlike the
+    # general chat proxy, the binding constraint is aggregate throughput
+    # against a free-tier ceiling (OpenRouter's free tier: ~20 req/min),
+    # not per-account cost. The global limit protects that shared budget;
+    # the per-account limit stops one user from spending all of it.
+    enforce_global_rate_limit("bosun-chat-global", limit=18, window_seconds=60)
+    enforce_global_rate_limit(f"bosun-chat-account:{account_id}", limit=6, window_seconds=60)
+
+    try:
+        return await services().bosun.chat(
+            account_id=account_id,
+            message=payload.message,
+            remember_about_me=payload.remember_about_me,
+            remember_for_everyone=payload.remember_for_everyone,
+        )
+    except BosunNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail="Bosun isn't configured yet") from exc
+
+
+@api.get("/bosun/memory/me")
+def bosun_my_memories(request: Request):
+    require_api_access(request)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="sign in to view what Bosun remembers about you")
+    return {"memories": services().bosun.list_my_memories(account_id)}
+
+
+@api.delete("/bosun/memory/me")
+def bosun_forget_me(request: Request):
+    require_api_access(request)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="sign in to clear what Bosun remembers about you")
+    services().bosun.forget_me(account_id)
+    return {"forgotten": True}
+
+
+@api.get("/bosun/memory/shared/pending")
+def bosun_pending_shared_memories(request: Request):
+    _require_bosun_admin(request)
+    return {"pending": services().bosun.list_pending_shared_memories()}
+
+
+@api.post("/bosun/memory/shared/{memory_id}/review")
+def bosun_review_shared_memory(memory_id: str, payload: BosunSharedMemoryReviewRequest, request: Request):
+    _require_bosun_admin(request)
+    reviewed = services().bosun.review_shared_memory(memory_id, payload.approve)
+    if not reviewed:
+        raise HTTPException(status_code=404, detail="shared memory proposal not found")
+    return {"memory": reviewed}
+
+
+@api.get("/bosun/knowledge")
+def bosun_list_core_knowledge(request: Request):
+    _require_bosun_admin(request)
+    return {"knowledge": services().repository.get_bosun_core_knowledge()}
+
+
+@api.post("/bosun/knowledge")
+def bosun_upsert_core_knowledge(payload: BosunCoreKnowledgeUpsertRequest, request: Request):
+    _require_bosun_admin(request)
+    services().repository.upsert_bosun_core_knowledge(payload.key, payload.content)
+    return {"key": payload.key, "content": payload.content}
 
 
 @api.post("/agents")
