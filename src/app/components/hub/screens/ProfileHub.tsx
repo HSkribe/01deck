@@ -26,9 +26,14 @@ import {
   removeApiKey as deleteStoredApiKey,
   type ApiKeyStore,
 } from '../../../utils/secureApiKeyStore';
+// Reuse llmClient's ProviderId rather than declaring a second, separately
+// maintained union here — this file used to define its own copy that
+// included 'grok'/'mistral' before llmClient.ts actually supported calling
+// them, so a key saved for either was silently never used for real chat.
+// Importing the same type makes that drift a compile error instead.
+import type { ProviderId } from '../../../services/llmClient';
 
 type ProfileView = 'overview' | 'options' | 'api';
-type ProviderId = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'grok' | 'mistral';
 
 // Keys are encrypted at rest — see src/app/utils/secureApiKeyStore.ts.
 type StoredApiKeys = ApiKeyStore<ProviderId>;
@@ -39,7 +44,16 @@ const providerOptions: Array<{
   description: string;
   portalLabel: string;
   portalUrl: string;
+  recommended?: boolean;
 }> = [
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: 'Recommended for getting started: one key unlocks many models, including openrouter/free — no cost, no card required.',
+    portalLabel: 'Get a free OpenRouter key',
+    portalUrl: 'https://openrouter.ai/keys',
+    recommended: true,
+  },
   {
     id: 'openai',
     label: 'ChatGPT / OpenAI',
@@ -62,11 +76,18 @@ const providerOptions: Array<{
     portalUrl: 'https://aistudio.google.com/app/apikey',
   },
   {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    description: 'Unified access to multiple providers through one API layer.',
-    portalLabel: 'OpenRouter Keys',
-    portalUrl: 'https://openrouter.ai/keys',
+    id: 'groq',
+    label: 'Groq',
+    description: 'Groq platform keys — fast inference for open models like Llama.',
+    portalLabel: 'Groq Console',
+    portalUrl: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    description: 'DeepSeek platform API credentials.',
+    portalLabel: 'DeepSeek Platform',
+    portalUrl: 'https://platform.deepseek.com/api_keys',
   },
   {
     id: 'grok',
@@ -144,7 +165,7 @@ export function ProfileHub() {
   const { user } = useAuth();
   const [view, setView] = React.useState<ProfileView>('overview');
   const [apiKeys, setApiKeys] = React.useState<StoredApiKeys>({});
-  const [selectedProvider, setSelectedProvider] = React.useState<ProviderId>('openai');
+  const [selectedProvider, setSelectedProvider] = React.useState<ProviderId>('openrouter');
   const [draftApiKey, setDraftApiKey] = React.useState('');
   const [showProviderHelp, setShowProviderHelp] = React.useState(false);
   const [saveNotice, setSaveNotice] = React.useState<string | null>(null);
@@ -559,6 +580,30 @@ export function ProfileHub() {
             </div>
           </div>
 
+          {configuredProviders.length === 0 ? (
+            <Surface className="p-5 mb-4" style={{ border: '1px solid rgba(34,197,94,0.35)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles size={14} style={{ color: '#4ade80' }} />
+                <div className="text-sm" style={{ color: t.text }}>Quick start: live chat in under a minute, for free</div>
+              </div>
+              <div className="text-xs mb-3" style={{ color: t.textMuted, lineHeight: 1.6 }}>
+                Grab a free key from OpenRouter, paste it below, and hit Save. 01Deck automatically routes to{' '}
+                <code className="px-1 py-0.5 rounded" style={{ background: t.surface3 }}>openrouter/free</code> — OpenRouter's own
+                no-cost model router — so agent replies go live with no card, no payment, and no model ID to pick.
+              </div>
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-xl"
+                style={{ background: 'rgba(34,197,94,0.14)', border: '1px solid rgba(34,197,94,0.35)', color: '#4ade80' }}
+              >
+                <ExternalLink size={12} />
+                Get a free OpenRouter key
+              </a>
+            </Surface>
+          ) : null}
+
           <Surface className="p-5 mb-4">
             <div className="text-[10px] uppercase tracking-wider mb-3" style={{ color: t.textMuted }}>Keys In Use</div>
             {configuredProviders.length > 0 ? (
@@ -635,6 +680,12 @@ export function ProfileHub() {
               </label>
             </div>
 
+            {selectedProvider === 'openrouter' ? (
+              <div className="text-xs mt-3" style={{ color: '#4ade80' }}>
+                No model ID needed — 01Deck uses OpenRouter's free auto-router (openrouter/free) by default with this key.
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap gap-3 mt-4">
               <motion.button
                 onClick={saveApiKey}
@@ -686,11 +737,24 @@ export function ProfileHub() {
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-xl p-4 block transition-transform"
-                    style={{ background: t.surface3, border: `1px solid ${t.border}` }}
+                    style={{
+                      background: t.surface3,
+                      border: `1px solid ${provider.recommended ? '#4ade80' : t.border}`,
+                    }}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm" style={{ color: t.text }}>{provider.label}</div>
+                        <div className="text-sm flex items-center gap-2" style={{ color: t.text }}>
+                          {provider.label}
+                          {provider.recommended ? (
+                            <span
+                              className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                              style={{ background: 'rgba(34,197,94,0.14)', border: '1px solid rgba(34,197,94,0.35)', color: '#4ade80' }}
+                            >
+                              Free to start
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="text-xs mt-1" style={{ color: t.textMuted }}>{provider.description}</div>
                       </div>
                       <ExternalLink size={14} style={{ color: PROFILE_COLOR }} />

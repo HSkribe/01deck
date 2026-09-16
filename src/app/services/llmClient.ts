@@ -1,6 +1,12 @@
 import { ensureApiKeysLoaded, getStoredApiKeysSync, type ApiKeyRecord } from '../utils/secureApiKeyStore';
 
-export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek';
+// The single source of truth for which providers this app can actually call.
+// ProfileHub.tsx's key-management UI imports this type rather than declaring
+// its own — the two used to be separate, hand-maintained unions ('grok' and
+// 'mistral' were only ever in ProfileHub's) so a key saved for either
+// provider was silently never picked up here. Add a provider in exactly one
+// place: this union, plus its branch in generateAgentCompletion() below.
+export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'openrouter' | 'groq' | 'deepseek' | 'grok' | 'mistral';
 
 export type StoredApiKeyRecord = ApiKeyRecord;
 export type StoredApiKeys = Partial<Record<ProviderId, StoredApiKeyRecord>>;
@@ -19,7 +25,11 @@ export { ensureApiKeysLoaded };
 
 export function getActiveApiKey(): { provider: ProviderId; key: string } | null {
   const keys = getStoredApiKeys();
-  const priorityOrder: ProviderId[] = ['gemini', 'openrouter', 'openai', 'anthropic', 'groq', 'deepseek'];
+  // OpenRouter first: it's the recommended onboarding path (openrouter/free
+  // below needs no payment method), so if a visitor followed that path and
+  // also still has some other provider's key sitting around, the one they
+  // just deliberately set up is what actually gets used.
+  const priorityOrder: ProviderId[] = ['openrouter', 'gemini', 'openai', 'anthropic', 'groq', 'deepseek', 'grok', 'mistral'];
   for (const provider of priorityOrder) {
     const record = keys[provider];
     if (record && record.key && record.key.trim().length > 0) {
@@ -94,19 +104,42 @@ export async function generateAgentCompletion(options: LLMCompletionOptions): Pr
     return reply;
   }
 
-  if (provider === 'openai' || provider === 'openrouter' || provider === 'groq' || provider === 'deepseek') {
+  if (
+    provider === 'openai' ||
+    provider === 'openrouter' ||
+    provider === 'groq' ||
+    provider === 'deepseek' ||
+    provider === 'grok' ||
+    provider === 'mistral'
+  ) {
     let baseUrl = 'https://api.openai.com/v1';
     let defaultModel = 'gpt-4o-mini';
 
     if (provider === 'openrouter') {
       baseUrl = 'https://openrouter.ai/api/v1';
-      defaultModel = 'google/gemini-2.5-flash';
+      // OpenRouter's own auto-router across whatever's currently free — see
+      // https://openrouter.ai/openrouter/free. Picking a specific free model
+      // here would go stale (OpenRouter's free roster rotates constantly as
+      // providers add/pull/reprice models); this alias is the part of the
+      // catalog OpenRouter itself keeps pointed at something free. Needs no
+      // payment method on the account at all — this is the "recommend
+      // OpenRouter + a free model" onboarding path in ProfileHub.tsx.
+      defaultModel = 'openrouter/free';
     } else if (provider === 'groq') {
       baseUrl = 'https://api.groq.com/openai/v1';
       defaultModel = 'llama-3.3-70b-versatile';
     } else if (provider === 'deepseek') {
       baseUrl = 'https://api.deepseek.com/v1';
       defaultModel = 'deepseek-chat';
+    } else if (provider === 'grok') {
+      baseUrl = 'https://api.x.ai/v1';
+      defaultModel = 'grok-4.6';
+    } else if (provider === 'mistral') {
+      baseUrl = 'https://api.mistral.ai/v1';
+      // "-latest" is a Mistral-maintained alias, not a dated snapshot — it
+      // keeps pointing at their current small/cheap model without needing
+      // an update here when a new one ships.
+      defaultModel = 'mistral-small-latest';
     }
 
     const model = options.model || defaultModel;

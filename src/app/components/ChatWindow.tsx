@@ -21,6 +21,7 @@ export function ChatWindow() {
     llmModel, setLlmModel,
     backendStatus, chatResponseSource, refreshBackendStatus, authenticateBackend, logoutBackend,
     isChatStreaming,
+    setWorkspaceSection,
     currentTheme: t,
   } = useApp();
 
@@ -346,8 +347,22 @@ export function ChatWindow() {
                     }}
                   />
                   {chatResponseSource !== 'direct-key' && (
-                    <div className="text-[10px]" style={{ color: t.textMuted }}>
-                      Prefer to use your own provider API key instead of the backend? That's supported (Gemini, OpenAI, Anthropic, OpenRouter, Groq, DeepSeek) but not yet exposed here — see "Chat Backend Configuration" in the README.
+                    <div
+                      className="rounded-lg px-3 py-2 flex items-center justify-between gap-2"
+                      style={{ border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.08)' }}
+                    >
+                      <div className="text-[10px]" style={{ color: t.textMuted }}>
+                        Want live replies without depending on the backend? Add a free OpenRouter key — no card required, no model
+                        to pick.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setWorkspaceSection('profile')}
+                        className="text-[10px] whitespace-nowrap rounded-lg px-2 py-1"
+                        style={{ color: '#4ade80', border: '1px solid rgba(34,197,94,0.35)', background: 'transparent' }}
+                      >
+                        Add free key
+                      </button>
                     </div>
                   )}
                 </div>
