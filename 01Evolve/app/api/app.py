@@ -63,8 +63,21 @@ async def add_security_headers(request: Request, call_next):
     # an allowed Host and always succeeds. That mismatch tripped the ECS
     # deployment circuit breaker on two separate deploy attempts. Every
     # other route still gets full Host validation, unchanged.
-    if request.url.path != "/healthz" and not _host_header_is_allowed(request):
-        return PlainTextResponse("Invalid host header", status_code=400)
+    #
+    # Exempts both /healthz (the ALB target group's direct check, bypassing
+    # CloudFront entirely) and /api/healthz (real public traffic arrives
+    # with CloudFront's /api/* prefix still attached -- checking only the
+    # bare path here was a bug: it silently never matched real requests).
+    if request.url.path not in ("/healthz", "/api/healthz") and not _host_header_is_allowed(request):
+        # Includes the actual received Host and the current allow-list.
+        # Neither is sensitive -- both are already-public DNS names -- and
+        # this is the fastest way to diagnose a Host mismatch without
+        # CloudWatch log access, which is exactly what masked the
+        # /api/healthz bug above through two failed-looking-successful
+        # deploys.
+        allowed = get_allowed_hosts()
+        received = request.headers.get("host", "<no host header>")
+        return PlainTextResponse(f"Invalid host header: {received!r} not in {allowed!r}", status_code=400)
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
