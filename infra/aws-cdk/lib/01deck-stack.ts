@@ -166,7 +166,12 @@ export class DeckStack extends Stack {
           DB_NAME: ecs.Secret.fromSecretsManager(db.secret!, 'dbname'),
         },
       },
-      healthCheckGracePeriod: Duration.seconds(60),
+      // 60s tripped the circuit breaker on a real deploy: new tasks failed
+      // ELB health checks and got killed (exit 137) before the app was even
+      // up. A genuinely new image means a cold ECR pull with no cached
+      // layers on whatever Fargate host lands the task, which combined with
+      // app startup can plausibly exceed 60s — 180s gives real headroom.
+      healthCheckGracePeriod: Duration.seconds(180),
       // Without this, a task that can't come up healthy makes CloudFormation
       // retry for up to 3 hours before giving up (hit this once already,
       // wasted 3 hours finding out) instead of failing fast so the real
@@ -175,7 +180,16 @@ export class DeckStack extends Stack {
       circuitBreaker: { enable: true, rollback: true },
     });
     db.connections.allowDefaultPortFrom(api.service, 'Fargate tasks read/write Postgres');
-    api.targetGroup.configureHealthCheck({ path: '/healthz', healthyHttpCodes: '200-299' });
+    api.targetGroup.configureHealthCheck({
+      path: '/healthz',
+      healthyHttpCodes: '200-299',
+      // Default unhealthy threshold (2) x default interval (30s) = a task
+      // gets marked unhealthy after just 60s of failures — exactly the
+      // grace-period edge case above. 5 consecutive failures at the same
+      // 30s interval (150s) stays comfortably inside the new 180s grace
+      // period instead of racing it.
+      unhealthyThresholdCount: 5,
+    });
 
     // ---------------------------------------------------------------------
     // Frontend — Vite SPA (`npm run build:deck` -> dist/) on S3 behind
