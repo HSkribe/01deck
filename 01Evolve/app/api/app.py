@@ -45,10 +45,14 @@ api.add_middleware(
 )
 
 def _host_header_is_allowed(request: Request) -> bool:
-    host = request.headers.get("host", "").split(":")[0]
+    host = request.headers.get("host", "").split(":")[0].lower()
     if not host:
         return False
-    return any(host == pattern or fnmatch(host, pattern) for pattern in get_allowed_hosts())
+    # Host headers/DNS names are case-insensitive per spec; confirmed live
+    # that CloudFront forwards Host to the origin lowercased even though
+    # the CloudFormation-generated ALB DNS name is mixed-case, so an exact,
+    # case-sensitive match against 01DECK_ALLOWED_HOSTS never succeeded.
+    return any(host == pattern.lower() or fnmatch(host, pattern.lower()) for pattern in get_allowed_hosts())
 
 
 @api.middleware("http")
@@ -77,7 +81,18 @@ async def add_security_headers(request: Request, call_next):
         # deploys.
         allowed = get_allowed_hosts()
         received = request.headers.get("host", "<no host header>")
-        return PlainTextResponse(f"Invalid host header: {received!r} not in {allowed!r}", status_code=400)
+        # get_allowed_hosts() returned its no-config fallback in production
+        # despite the task definition showing 01DECK_ALLOWED_HOSTS set --
+        # narrow, temporary check for whether the key reaches this process
+        # at all. Reveals only this one already-non-sensitive var's raw
+        # value and a presence boolean, nothing else from the environment.
+        env_present = "01DECK_ALLOWED_HOSTS" in os.environ
+        raw_value = os.environ.get("01DECK_ALLOWED_HOSTS")
+        return PlainTextResponse(
+            f"Invalid host header: {received!r} not in {allowed!r} "
+            f"(env key present={env_present}, raw value={raw_value!r})",
+            status_code=400,
+        )
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
