@@ -368,6 +368,7 @@ interface AppContextType {
   setSearchQuery: (q: string) => void;
   addAgent: (agent: Agent) => void;
   removeAgent: (agentId: string) => void;
+  awardContributorCredit: (agentId: string, awardedFor: string, promoteToLegend?: boolean) => void;
   ownerIdentity: OwnerIdentityState | null;
   ensureOwnerIdentity: (displayName?: string) => OwnerIdentityState;
 
@@ -666,6 +667,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addAgent = useCallback((agent: Agent) => {
     setUserAgents(prev => [agent, ...prev.filter(existing => existing.id !== agent.id)]);
   }, []);
+
+  // Self-serve local award of the cosmetic "contributed to 01Deck" credit —
+  // see contributorCredit in src/app/data/agents.ts. Reuses addAgent's
+  // upsert-by-id as the update path (there's no separate "patch an existing
+  // agent record" mechanism in this app), which is also why `allAgents`
+  // below dedupes by id: awarding a credit to one of the shipped seed agents
+  // (not just a user-created one) stores the merged record in `userAgents`,
+  // and that override needs to take precedence over the original seed entry
+  // rather than rendering alongside it as a duplicate.
+  //
+  // `promoteToLegend` is an optional bundled reward, not a second feature:
+  // it just sets the agent's existing `rarity` field to 'legend' so the
+  // rarity system's own existing badge/card rendering takes over — no new
+  // visual treatment. It's a separate reward from the contributor badge
+  // itself (rarity says "Legend tier"; the badge says "because it helped
+  // improve the product"), so both fields are written in the same upsert
+  // but neither implies the other.
+  const awardContributorCredit = useCallback((agentId: string, awardedFor: string, promoteToLegend = false) => {
+    const trimmed = awardedFor.trim();
+    if (!trimmed) return;
+    const base = userAgents.find(a => a.id === agentId) ?? initialAgents.find(a => a.id === agentId);
+    if (!base) return;
+    addAgent({
+      ...base,
+      ...(promoteToLegend ? { rarity: 'legend' as const } : {}),
+      contributorCredit: {
+        awardedFor: trimmed,
+        awardedAt: new Date().toISOString(),
+      },
+    });
+  }, [userAgents, addAgent]);
 
   // Lazily enrolls the one-per-installation 01Protocol owner identity the
   // first time it's needed — i.e. the first time a user creates an agent.
@@ -1051,8 +1083,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? 'backend'
       : 'local';
 
-  // Merge user-created agents with initial agents, then filter
-  const allAgents = [...userAgents, ...initialAgents];
+  // Merge user-created agents with initial (seed) agents, then filter.
+  // Deduped by id, favoring userAgents: userAgents doubles as both
+  // user-created agents AND local overrides for seed agents (e.g. a
+  // contributor credit awarded to a shipped seed agent via
+  // awardContributorCredit/addAgent above) — without this dedupe a seed
+  // agent that received an override would render twice.
+  const seenAgentIds = new Set<string>();
+  const allAgents = [...userAgents, ...initialAgents].filter(agent => {
+    if (seenAgentIds.has(agent.id)) return false;
+    seenAgentIds.add(agent.id);
+    return true;
+  });
   const filteredAgents = allAgents
     .filter(a => {
       if (selectedCategory && a.category !== selectedCategory) return false;
@@ -1163,6 +1205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSearchQuery,
         addAgent,
         removeAgent,
+        awardContributorCredit,
         ownerIdentity,
         ensureOwnerIdentity,
         activeAgent,

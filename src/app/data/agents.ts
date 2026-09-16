@@ -102,6 +102,17 @@ export interface Agent {
   bpm?: number;
   timeSignature?: string;
   careProfile?: AgentCareProfile;
+  // Cosmetic recognition that this agent identity helped improve 01Deck
+  // itself — logged via AGENT_FEEDBACK.md and awarded locally by a human
+  // reviewer through "Award Contributor Credit" in AgentCardModal (see
+  // awardContributorCredit in AppContext.tsx). Unlike `verification` above,
+  // this makes no claim about the agent's cryptographic identity — it is
+  // self-serve within this installation, not root-of-trust-backed. Single
+  // credit for v1, not a history/array.
+  contributorCredit?: {
+    awardedFor: string;
+    awardedAt: string;
+  };
 }
 
 export const rarityConfig: Record<Rarity, {
