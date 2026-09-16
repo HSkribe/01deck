@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Clock, Wifi, WifiOff, Tag, MessageSquare, ChevronRight, ShieldAlert, ShieldCheck, Dna } from 'lucide-react';
+import { X, Clock, Wifi, WifiOff, Tag, MessageSquare, ChevronRight, ShieldAlert, ShieldCheck, Dna, Medal } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { rarityConfig, Agent } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
+import { ContributorBadge } from './ContributorBadge';
 import logoMark from '../assets/logo-mark.svg';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { ModalPortal } from './ui/ModalPortal';
@@ -236,6 +237,11 @@ function CardFront({ agent, config }: { agent: Agent; config: typeof rarityConfi
             <span>Stage {agent.evolutionStage ?? 0} Evolution</span>
           </div>
         ) : null}
+        {agent.contributorCredit ? (
+          <span className="inline-block ml-2 mb-2">
+            <ContributorBadge awardedFor={agent.contributorCredit.awardedFor} variant="pill" />
+          </span>
+        ) : null}
         <div
           className="text-xs px-3 py-1.5 rounded-lg"
           style={{
@@ -257,9 +263,28 @@ function CardFront({ agent, config }: { agent: Agent; config: typeof rarityConfi
 }
 
 function CardBack({ agent, config }: { agent: Agent; config: typeof rarityConfig[keyof typeof rarityConfig] }) {
-  const { currentTheme: t, setChatAgent, isPluginEnabled } = useApp();
+  const { currentTheme: t, setChatAgent, isPluginEnabled, awardContributorCredit } = useApp();
   const evolutionPluginEnabled = isPluginEnabled('01evolve-experience');
   const verificationStatus = agent.verification?.status;
+  const [isAwarding, setIsAwarding] = useState(false);
+  const [awardReason, setAwardReason] = useState('');
+  const [promoteToLegend, setPromoteToLegend] = useState(false);
+
+  // The flip container that wraps both faces toggles on any click/Enter/
+  // Space bubbling up to it (see AgentCardModal's onClick/onKeyDown below).
+  // Everything in the award form needs to swallow those events so typing a
+  // reason (which includes plenty of spaces) doesn't flip the card out from
+  // under the user.
+  const stopBubble = (event: React.SyntheticEvent) => event.stopPropagation();
+
+  const submitAward = () => {
+    const trimmed = awardReason.trim();
+    if (!trimmed) return;
+    awardContributorCredit(agent.id, trimmed, promoteToLegend);
+    setIsAwarding(false);
+    setAwardReason('');
+    setPromoteToLegend(false);
+  };
 
   return (
     <div className="relative w-full h-full flex flex-col overflow-hidden rounded-2xl">
@@ -442,6 +467,105 @@ function CardBack({ agent, config }: { agent: Agent; config: typeof rarityConfig
           </div>
         </div>
 
+        {/* Contributor Credit */}
+        <div className="mb-4" onClick={stopBubble} onKeyDown={stopBubble}>
+          <div className="flex items-center gap-1 mb-1.5">
+            <Medal size={11} style={{ color: '#f7c948' }} />
+            <span className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Contributor Credit
+            </span>
+          </div>
+          {agent.contributorCredit ? (
+            <div
+              className="p-3 rounded-lg"
+              style={{ background: 'rgba(240,180,41,0.08)', border: '1px solid rgba(240,180,41,0.28)' }}
+            >
+              <ContributorBadge awardedFor={agent.contributorCredit.awardedFor} variant="pill" />
+              <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>
+                {agent.contributorCredit.awardedFor}
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                Awarded {new Date(agent.contributorCredit.awardedAt).toLocaleDateString()}
+              </p>
+            </div>
+          ) : isAwarding ? (
+            <div
+              className="p-3 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <textarea
+                autoFocus
+                value={awardReason}
+                onChange={e => setAwardReason(e.target.value)}
+                placeholder='What did this agent help improve? e.g. "Flagged the missing agent-identity badge in shared Hub spaces"'
+                rows={2}
+                maxLength={280}
+                className="w-full text-xs rounded-md p-2 mb-2 resize-none focus:outline-none"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  color: 'rgba(255,255,255,0.85)',
+                }}
+              />
+              {agent.rarity !== 'legend' && (
+                <label
+                  className="flex items-center gap-2 mb-2 text-xs cursor-pointer select-none"
+                  style={{ color: 'rgba(255,255,255,0.6)' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={promoteToLegend}
+                    onChange={e => setPromoteToLegend(e.target.checked)}
+                    style={{ accentColor: '#f7c948' }}
+                  />
+                  <span>
+                    Also promote to <span style={{ color: '#d4af37' }}>Legend</span> rarity
+                  </span>
+                </label>
+              )}
+              <div className="flex items-center gap-2">
+                <motion.button
+                  type="button"
+                  onClick={submitAward}
+                  disabled={!awardReason.trim()}
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{
+                    background: 'rgba(240,180,41,0.16)',
+                    border: '1px solid rgba(240,180,41,0.4)',
+                    color: '#f7c948',
+                    opacity: awardReason.trim() ? 1 : 0.45,
+                    cursor: awardReason.trim() ? 'pointer' : 'default',
+                  }}
+                  whileHover={awardReason.trim() ? { scale: 1.03 } : undefined}
+                  whileTap={awardReason.trim() ? { scale: 0.97 } : undefined}
+                >
+                  Award Credit
+                </motion.button>
+                <button
+                  type="button"
+                  onClick={() => { setIsAwarding(false); setAwardReason(''); setPromoteToLegend(false); }}
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <motion.button
+              type="button"
+              onClick={() => setIsAwarding(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs"
+              style={{ background: 'rgba(240,180,41,0.08)', border: '1px dashed rgba(240,180,41,0.32)', color: '#f7c948' }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Medal size={12} />
+              <span>Award Contributor Credit</span>
+            </motion.button>
+          )}
+        </div>
+
         {/* CTA */}
         <motion.button
           onClick={() => setChatAgent(agent)}
@@ -468,7 +592,7 @@ function CardBack({ agent, config }: { agent: Agent; config: typeof rarityConfig
 }
 
 export function AgentCardModal() {
-  const { activeAgent, isCardVisible, setIsCardVisible, setActiveAgent, currentTheme: t } = useApp();
+  const { activeAgent, allAgents, isCardVisible, setIsCardVisible, setActiveAgent, currentTheme: t } = useApp();
   const [isFlipped, setIsFlipped] = useState(false);
 
   useEffect(() => {
@@ -486,7 +610,14 @@ export function AgentCardModal() {
   });
 
   if (!activeAgent) return null;
-  const config = rarityConfig[activeAgent.rarity];
+  // activeAgent is a snapshot captured when the card was opened (see
+  // setActiveAgent in AgentBar.tsx) — it doesn't update on its own when the
+  // underlying record changes. Re-resolve the live copy from allAgents so
+  // in-card actions that mutate the agent record (e.g. Award Contributor
+  // Credit below, which can also promote rarity) are reflected immediately
+  // without requiring the user to close and reopen the card.
+  const liveAgent = allAgents.find(a => a.id === activeAgent.id) ?? activeAgent;
+  const config = rarityConfig[liveAgent.rarity];
 
   return (
     <ModalPortal>
@@ -509,7 +640,7 @@ export function AgentCardModal() {
               ref={panelRef}
               role="dialog"
               aria-modal="true"
-              aria-label={`${activeAgent.name} agent card`}
+              aria-label={`${liveAgent.name} agent card`}
               tabIndex={-1}
               initial={{ scale: 0.5, opacity: 0, y: 40 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -540,7 +671,7 @@ export function AgentCardModal() {
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={isFlipped ? `Showing back of ${activeAgent.name}'s card. Press Enter to flip to front.` : `Showing front of ${activeAgent.name}'s card. Press Enter to flip to back.`}
+                aria-label={isFlipped ? `Showing back of ${liveAgent.name}'s card. Press Enter to flip to front.` : `Showing front of ${liveAgent.name}'s card. Press Enter to flip to back.`}
                 onClick={() => setIsFlipped(f => !f)}
                 onKeyDown={event => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -560,7 +691,7 @@ export function AgentCardModal() {
                     className="absolute inset-0"
                     style={{ backfaceVisibility: 'hidden' }}
                   >
-                    <CardFront agent={activeAgent} config={config} />
+                    <CardFront agent={liveAgent} config={config} />
                   </div>
 
                   {/* Back face */}
@@ -571,7 +702,7 @@ export function AgentCardModal() {
                       transform: 'rotateY(180deg)',
                     }}
                   >
-                    <CardBack agent={activeAgent} config={config} />
+                    <CardBack agent={liveAgent} config={config} />
                   </div>
                 </motion.div>
               </motion.div>

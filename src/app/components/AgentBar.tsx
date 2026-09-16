@@ -4,6 +4,7 @@ import { useDrag } from 'react-dnd';
 import { Clock, Dna, MessageSquare, Play, ShieldAlert, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { Agent, rarityConfig } from '../data/agents';
 import { RarityBadge } from './RarityBadge';
+import { ContributorBadge } from './ContributorBadge';
 import { useApp } from '../context/AppContext';
 
 interface AgentBarProps {
@@ -321,6 +322,9 @@ export const AgentBar = React.forwardRef<HTMLDivElement, AgentBarProps>(function
               <Sparkles size={8} />
               MAESTRO
             </span>
+          )}
+          {agent.contributorCredit && (
+            <ContributorBadge awardedFor={agent.contributorCredit.awardedFor} variant="tag" />
           )}
         </div>
         <div className="text-xs mt-0.5 truncate" style={{ color: t.textMuted }}>
