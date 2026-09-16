@@ -913,7 +913,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const agentMessageId = `a-${Date.now()}`;
 
     const activeKeyInfo = getActiveApiKey();
-    const hasLiveLlm = Boolean(activeKeyInfo || backendStatus === 'ready');
+    // Backend chat now also requires a real signed-in account server-side
+    // (see 01Evolve/app/api/app.py's proxy_chat_completion) — the beta
+    // cookie alone used to be enough to spend this deployment's shared
+    // OPENAI_API_KEY, which meant anyone with the one shared beta token had
+    // unlimited free chat. `backendStatus === 'ready'` only reflects the
+    // beta wall, so it's not sufficient on its own any more; check that the
+    // signed-in user is an actual backend account (not the offline/local-
+    // first fallback from AuthContext) before treating backend chat as
+    // live, or this would look "ready" in the UI and then 401 on send.
+    const hasLiveLlm = Boolean(activeKeyInfo || (backendStatus === 'ready' && user?.source === 'backend'));
 
     if (!hasLiveLlm) {
       setTimeout(() => {
@@ -1032,13 +1041,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIsChatStreaming(false);
       }
     })();
-  }, [backendStatus, chatAgent, chatMemoryContext, chatMessages, llmModel]);
+  }, [backendStatus, chatAgent, chatMemoryContext, chatMessages, llmModel, user]);
 
   // What the next chat message will actually use — shown in ChatWindow so a
   // simulated reply is never presented as if it came from a live model.
   const chatResponseSource: ChatResponseSource = getActiveApiKey()
     ? 'direct-key'
-    : backendStatus === 'ready'
+    : backendStatus === 'ready' && user?.source === 'backend'
       ? 'backend'
       : 'local';
 

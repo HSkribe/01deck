@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useDrop } from 'react-dnd';
 import { X, Send, Bot, GripVertical, Minimize2, Maximize2, KeyRound, LoaderCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { Agent, rarityConfig } from '../data/agents';
 
 function getInitialChatWindowPosition() {
@@ -24,6 +25,13 @@ export function ChatWindow() {
     setWorkspaceSection,
     currentTheme: t,
   } = useApp();
+  const { user } = useAuth();
+  // The beta wall being open ('ready') no longer guarantees backend chat
+  // works — the server also requires a real signed-in account (see
+  // AppContext's hasLiveLlm comment). 'local' users passed the offline
+  // fallback in AuthContext (no backend reachable at signup/login time),
+  // not a real account, so they still need one before backend chat is live.
+  const backendChatNeedsAccount = backendStatus === 'ready' && user?.source !== 'backend';
 
   const [inputText, setInputText] = useState('');
   const [betaToken, setBetaToken] = useState('');
@@ -256,7 +264,7 @@ export function ChatWindow() {
                       className="flex-1 rounded-lg px-3 py-2 text-[11px]"
                       style={{
                         color:
-                          backendStatus === 'ready' ? '#4ade80'
+                          backendStatus === 'ready' ? (backendChatNeedsAccount ? '#facc15' : '#4ade80')
                           : backendStatus === 'unreachable' || backendStatus === 'error' ? '#f87171'
                           : t.textMuted,
                         border: `1px solid ${t.border}`,
@@ -268,7 +276,8 @@ export function ChatWindow() {
                       {backendStatus === 'error' && 'Backend returned an unexpected error.'}
                       {backendStatus === 'not-configured' && 'Backend auth disabled for this environment.'}
                       {backendStatus === 'auth-required' && 'Beta session required.'}
-                      {backendStatus === 'ready' && 'Beta session active.'}
+                      {backendStatus === 'ready' && backendChatNeedsAccount && 'Beta session active — sign in to a 01Deck account to enable shared chat.'}
+                      {backendStatus === 'ready' && !backendChatNeedsAccount && 'Beta session active.'}
                     </div>
                     {backendStatus === 'unreachable' || backendStatus === 'error' ? (
                       <button

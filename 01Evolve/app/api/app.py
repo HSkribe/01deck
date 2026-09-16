@@ -275,7 +275,28 @@ def account_award_xp(payload: AccountXpAwardRequest, request: Request):
 @api.post("/chat/completions")
 async def proxy_chat_completion(payload: ChatProxyRequest, request: Request):
     require_api_access(request)
+
+    # The beta gate alone only proves "has the one shared beta token" — with
+    # a single token handed out to every beta tester, that would make this
+    # endpoint (which spends this deployment's own OPENAI_API_KEY, a real
+    # dollar cost) an unlimited-use spigot for anyone who has it. Requiring
+    # a signed-in 01Deck account on top gives each caller their own rate
+    # limit bucket below, so usage is at least attributable and boundable
+    # per account rather than shared across everyone with the beta token.
+    # A user who would rather skip account creation entirely can still chat
+    # live by adding their own provider key instead (see ProfileHub.tsx) —
+    # that path never touches this endpoint or this deployment's key.
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(
+            status_code=401,
+            detail="sign in to use shared backend chat, or add your own provider API key instead",
+        )
+
     enforce_rate_limit(request, "chat", limit=30, window_seconds=60)
+    # Per-account, IP-independent: bounds one account's spend on this
+    # deployment's shared key regardless of how many IPs it's used from.
+    enforce_global_rate_limit(f"chat-account:{account_id}", limit=30, window_seconds=60)
 
     provider_api_key = os.getenv("OPENAI_API_KEY")
     if not provider_api_key:
