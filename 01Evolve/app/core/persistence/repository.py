@@ -23,8 +23,11 @@ from app.core.persistence.models import (
     SupportEvaluationRunRecord,
     TemperamentRecord,
     TestRunRecord,
+    UserAccountRecord,
+    utc_now,
 )
 from app.core.schemas.models import (
+    AccountPublic,
     AgentRead,
     BaselineProfile,
     EvaluationRunRead,
@@ -616,6 +619,74 @@ class Repository:
             return
         row.report_json = report.model_dump_json()
         self.session.commit()
+
+    def _decode_account(self, record: UserAccountRecord) -> AccountPublic:
+        return AccountPublic(
+            account_id=record.account_id,
+            username=record.username,
+            display_name=record.display_name,
+            xp=record.xp,
+            level=record.level,
+            created_at=record.created_at,
+            last_login_at=record.last_login_at,
+        )
+
+    def get_account_record_by_username(self, username: str) -> UserAccountRecord | None:
+        return self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.username == username))
+
+    def get_account_by_id(self, account_id: str) -> AccountPublic | None:
+        record = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == account_id))
+        return self._decode_account(record) if record else None
+
+    def create_account(
+        self,
+        account_id: str,
+        username: str,
+        display_name: str,
+        password_hash: str,
+        password_salt: str,
+        password_iterations: int,
+        email: str | None = None,
+    ) -> AccountPublic:
+        """Raises sqlalchemy.exc.IntegrityError on a concurrent duplicate username/email/account_id."""
+        record = UserAccountRecord(
+            account_id=account_id,
+            username=username,
+            display_name=display_name,
+            email=email,
+            password_hash=password_hash,
+            password_salt=password_salt,
+            password_iterations=password_iterations,
+        )
+        self.session.add(record)
+        self.session.commit()
+        return self._decode_account(record)
+
+    def update_account_password(self, username: str, password_hash: str, password_salt: str, password_iterations: int) -> None:
+        record = self.get_account_record_by_username(username)
+        if not record:
+            return
+        record.password_hash = password_hash
+        record.password_salt = password_salt
+        record.password_iterations = password_iterations
+        self.session.commit()
+
+    def mark_account_login(self, username: str) -> AccountPublic | None:
+        record = self.get_account_record_by_username(username)
+        if not record:
+            return None
+        record.last_login_at = utc_now()
+        self.session.commit()
+        return self._decode_account(record)
+
+    def award_account_xp(self, account_id: str, amount: int) -> AccountPublic | None:
+        record = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == account_id))
+        if not record:
+            return None
+        record.xp = max(0, record.xp + amount)
+        record.level = record.xp // 500 + 1
+        self.session.commit()
+        return self._decode_account(record)
 
     def get_support_benchmark_report(self, benchmark_run_id: str) -> SupportBenchmarkReport | None:
         row = self.session.scalar(

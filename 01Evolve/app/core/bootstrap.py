@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.accounts.service import AccountService
 from app.core.agents.service import AgentService
 from app.core.evaluation.service import EvaluationService
 from app.core.evolution.service import EvolutionService
@@ -22,6 +23,7 @@ class ServiceContainer:
     evaluations: EvaluationService
     evolution: EvolutionService
     support: SupportOptimizationService
+    accounts: AccountService
 
 
 def build_services(db_url: str | None = None, plugin_config_path: str | Path | None = None) -> ServiceContainer:
@@ -37,6 +39,7 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
         evaluation_service=evaluations,
     )
     support = SupportOptimizationService(repository, agent_service=agents)
+    accounts = AccountService(repository)
     return ServiceContainer(
         repository=repository,
         lifecycle=lifecycle,
@@ -45,4 +48,5 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
         evaluations=evaluations,
         evolution=evolution,
         support=support,
+        accounts=accounts,
     )

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { backendApi, BackendUnreachableError, type BackendAccount } from '../services/backendApi';
 
 export interface User {
   id: string;
@@ -7,6 +8,25 @@ export interface User {
   joinedAt: number;
   xp: number;
   level: number;
+  // Which store is authoritative for this session. 'backend' means the
+  // 01Evolve API's real, server-side account (password hashed server-side,
+  // session an httpOnly cookie, XP persisted in the DB) is the source of
+  // truth; awardXP and logout defer to it. 'local' is the pre-backend,
+  // browser-localStorage-only account used when the backend is unreachable
+  // (offline / local-first / not deployed yet) — see login()/signup() below.
+  source: 'backend' | 'local';
+}
+
+function accountToUser(account: BackendAccount): User {
+  return {
+    id: account.account_id,
+    username: account.username,
+    displayName: account.display_name,
+    joinedAt: new Date(account.created_at).getTime(),
+    xp: account.xp,
+    level: account.level,
+    source: 'backend',
+  };
 }
 
 // Password storage formats. `Pbkdf2PasswordHash` is what every new signup
@@ -228,7 +248,7 @@ function readSession(): User | null {
     // immediately re-writes it via writeSession, upgrading it to the
     // expiring format from that point on.
     if (typeof parsed.id === 'string' && !('expiresAt' in parsed)) {
-      return parsed as User;
+      return withDefaultSource(parsed as User);
     }
 
     const session = parsed as Partial<StoredSession>;
@@ -241,10 +261,18 @@ function readSession(): User | null {
       return null;
     }
     const user = session.user;
-    return user && typeof user === 'object' && user.id ? user : null;
+    return user && typeof user === 'object' && user.id ? withDefaultSource(user) : null;
   } catch {
     return null;
   }
+}
+
+// Session records written before `source` existed (or read back malformed)
+// default to 'local' — the safe assumption, since it only enables the old
+// client-only XP/logout path rather than mistakenly trusting a backend
+// session that was never actually established.
+function withDefaultSource(user: User): User {
+  return user.source === 'backend' ? user : { ...user, source: 'local' };
 }
 
 function writeSession(user: User | null): void {
@@ -285,6 +313,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
   ): Promise<{ success: boolean; error?: string }> => {
     const cleanUsername = username.toLowerCase();
+
+    // Real accounts live server-side now (01Evolve's /account/login — real
+    // PBKDF2 hashing, a signed session cookie, and rate limiting that
+    // actually holds under a distributed attack, unlike the client-only
+    // throttle below). Only fall back to the local-only store if the
+    // backend itself is unreachable — offline, not deployed yet, or this is
+    // a local-first install with no server configured. If the backend IS
+    // reachable and rejects the login, that rejection is authoritative and
+    // should not be silently retried against local accounts.
+    try {
+      const account = await backendApi.loginAccount(cleanUsername, password);
+      const sessionUser = accountToUser(account);
+      writeSession(sessionUser);
+      setUser(sessionUser);
+      return { success: true };
+    } catch (error) {
+      if (!(error instanceof BackendUnreachableError)) {
+        return { success: false, error: error instanceof Error ? error.message : 'Invalid username or password' };
+      }
+    }
 
     const throttle = checkThrottle(cleanUsername);
     if (throttle.blocked) {
@@ -336,6 +384,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       joinedAt: found.joinedAt,
       xp: found.xp,
       level: found.level,
+      source: 'local',
     };
     writeSession(sessionUser);
     setUser(sessionUser);
@@ -348,6 +397,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
   ): Promise<{ success: boolean; error?: string }> => {
     const cleanUsername = username.toLowerCase().trim();
+
+    // Same reasoning as login() above: try the real server-side account
+    // first, only falling back to local-only storage if the backend is
+    // unreachable rather than if it simply rejects the request.
+    try {
+      const account = await backendApi.signupAccount({ username: cleanUsername, displayName, password });
+      const sessionUser = accountToUser(account);
+      writeSession(sessionUser);
+      setUser(sessionUser);
+      return { success: true };
+    } catch (error) {
+      if (!(error instanceof BackendUnreachableError)) {
+        return { success: false, error: error instanceof Error ? error.message : 'Signup failed' };
+      }
+    }
 
     if (cleanUsername.length < 3) {
       return { success: false, error: 'Username must be at least 3 characters' };
@@ -377,6 +441,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       joinedAt: Date.now(),
       xp: 0,
       level: 1,
+      source: 'local',
       passwordHash: await derivePbkdf2Hash(password),
     };
 
@@ -389,6 +454,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       joinedAt: newUser.joinedAt,
       xp: newUser.xp,
       level: newUser.level,
+      source: 'local',
     };
     writeSession(sessionUser);
     setUser(sessionUser);
@@ -396,9 +462,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    const wasBackendSession = user?.source === 'backend';
     writeSession(null);
     setUser(null);
-  }, []);
+    if (wasBackendSession) {
+      // Best-effort: revoke the server-side session cookie. Local state is
+      // already cleared above regardless of whether this succeeds — a user
+      // who asked to sign out should not stay signed in locally just
+      // because the backend was unreachable at that moment.
+      void backendApi.logoutAccount().catch(() => {});
+    }
+  }, [user]);
 
   const awardXP = useCallback((amount: number) => {
     setUser(prev => {
@@ -409,6 +483,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Persist to session
       writeSession(updated);
+
+      if (prev.source === 'backend') {
+        // The DB row is authoritative for backend accounts — sync the
+        // award server-side and reconcile local state with whatever it
+        // actually persisted, rather than trusting this optimistic value.
+        void backendApi.awardAccountXp(amount)
+          .then(account => setUser(current => (current && current.source === 'backend' ? accountToUser(account) : current)))
+          .catch(() => {});
+        return updated;
+      }
 
       // Persist to users store
       const users = readUsers();

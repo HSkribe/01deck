@@ -666,3 +666,15 @@ class SupportBenchmarkRun(BaseModel):
     adapter_mode: SupportAdapterMode = SupportAdapterMode.MOCK
     report: SupportBenchmarkReport | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class AccountPublic(BaseModel):
+    """User account fields safe to hand back to the client — never the password hash/salt."""
+
+    account_id: str
+    username: str
+    display_name: str
+    xp: int
+    level: int
+    created_at: datetime
+    last_login_at: datetime | None = None

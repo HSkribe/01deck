@@ -223,6 +223,22 @@ class SupportCaseResultRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class UserAccountRecord(Base):
+    __tablename__ = "user_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(128))
+    password_salt: Mapped[str] = mapped_column(String(64))
+    password_iterations: Mapped[int] = mapped_column(Integer())
+    xp: Mapped[int] = mapped_column(Integer(), default=0)
+    level: Mapped[int] = mapped_column(Integer(), default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SupportBenchmarkRunRecord(Base):
     __tablename__ = "support_benchmark_runs"
     id: Mapped[int] = mapped_column(primary_key=True)

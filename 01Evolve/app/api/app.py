@@ -8,19 +8,26 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from app.api.security import (
+    account_id_from_session,
+    account_session_cookie_settings,
+    ACCOUNT_SESSION_COOKIE_NAME,
     auth_is_enabled,
+    create_account_session,
     create_session_cookie,
+    enforce_global_rate_limit,
     enforce_rate_limit,
     get_allowed_hosts,
     get_allowed_origins,
     get_beta_access_token,
     require_api_access,
     request_is_authenticated,
+    revoke_account_session,
     revoke_session_cookie,
     SESSION_COOKIE_NAME,
     session_cookie_is_valid,
     secure_cookie_settings,
 )
+from app.core.accounts.service import AccountError
 from app.core.bootstrap import build_services
 from app.core.llm.adapters import OpenAICompatibleAdapter
 from app.core.lineage.service import LineageService
@@ -47,7 +54,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Cross-Origin-Resource-Policy"] = "same-site"
     response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-    if request.url.path.startswith("/auth/") or request.url.path.startswith("/chat/"):
+    if (
+        request.url.path.startswith("/auth/")
+        or request.url.path.startswith("/chat/")
+        or request.url.path.startswith("/account/")
+    ):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -126,6 +137,22 @@ class BetaSessionRequest(BaseModel):
     token: str = Field(min_length=8, max_length=256)
 
 
+class AccountSignupRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    display_name: str = Field(default="", max_length=255)
+    password: str = Field(min_length=8, max_length=256)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class AccountLoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AccountXpAwardRequest(BaseModel):
+    amount: int = Field(ge=-100_000, le=100_000)
+
+
 class ChatMessagePayload(BaseModel):
     role: str
     content: str = Field(min_length=1, max_length=8000)
@@ -172,6 +199,77 @@ def secrets_compare(left: str, right: str) -> bool:
     import secrets
 
     return secrets.compare_digest(left, right)
+
+
+def _current_account_id(request: Request) -> str | None:
+    token = request.cookies.get(ACCOUNT_SESSION_COOKIE_NAME, "")
+    return account_id_from_session(token)
+
+
+@api.post("/account/signup")
+def account_signup(payload: AccountSignupRequest, request: Request, response: Response):
+    require_api_access(request)
+    enforce_rate_limit(request, "account-signup", limit=10, window_seconds=300)
+    try:
+        account = services().accounts.signup(
+            payload.username, payload.display_name, payload.password, payload.email
+        )
+    except AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    token = create_account_session(account.account_id)
+    response.set_cookie(ACCOUNT_SESSION_COOKIE_NAME, token, **account_session_cookie_settings())
+    return {"account": account}
+
+
+@api.post("/account/login")
+def account_login(payload: AccountLoginRequest, request: Request, response: Response):
+    require_api_access(request)
+    enforce_rate_limit(request, "account-login", limit=20, window_seconds=60)
+    # Per-username, IP-independent: stops credential stuffing spread across
+    # many addresses, which the per-IP limit above and the old client-side
+    # throttle in AuthContext.tsx could never actually catch.
+    enforce_global_rate_limit(f"account-login-user:{payload.username.strip().lower()}", limit=8, window_seconds=60)
+    try:
+        account = services().accounts.login(payload.username, payload.password)
+    except AccountError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    token = create_account_session(account.account_id)
+    response.set_cookie(ACCOUNT_SESSION_COOKIE_NAME, token, **account_session_cookie_settings())
+    return {"account": account}
+
+
+@api.delete("/account/session")
+def account_logout(request: Request, response: Response):
+    token = request.cookies.get(ACCOUNT_SESSION_COOKIE_NAME, "")
+    if token:
+        revoke_account_session(token)
+    response.delete_cookie(ACCOUNT_SESSION_COOKIE_NAME, path="/")
+    return {"authenticated": False}
+
+
+@api.get("/account/me")
+def account_me(request: Request):
+    require_api_access(request)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    account = services().accounts.get_by_id(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="account not found")
+    return {"account": account}
+
+
+@api.post("/account/xp")
+def account_award_xp(payload: AccountXpAwardRequest, request: Request):
+    require_api_access(request)
+    enforce_rate_limit(request, "account-xp", limit=60, window_seconds=60)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    account = services().accounts.award_xp(account_id, payload.amount)
+    if not account:
+        raise HTTPException(status_code=404, detail="account not found")
+    return {"account": account}
 
 
 @api.post("/chat/completions")

@@ -14,7 +14,16 @@ async function backendFetch<T>(path: string, options: BackendFetchOptions = {}):
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const raw = await response.text();
+    // FastAPI's HTTPException bodies are JSON ({"detail": "..."}) — surface
+    // the human-readable detail instead of the raw '{"detail":"..."}' string.
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.detail === 'string') message = parsed.detail;
+    } catch {
+      // not JSON — fall through and use the raw text as-is
+    }
     throw new Error(message || `HTTP ${response.status}`);
   }
 
@@ -47,6 +56,16 @@ export interface BackendChatMessage {
 export interface BackendChatResponse {
   text: string;
   model: string;
+}
+
+export interface BackendAccount {
+  account_id: string;
+  username: string;
+  display_name: string;
+  xp: number;
+  level: number;
+  created_at: string;
+  last_login_at: string | null;
 }
 
 export const backendApi = {
@@ -101,5 +120,39 @@ export const backendApi = {
 
   getJson<T>(path: string): Promise<T> {
     return backendFetch<T>(path);
+  },
+
+  signupAccount(payload: { username: string; displayName: string; password: string; email?: string }): Promise<BackendAccount> {
+    return backendFetch<{ account: BackendAccount }>('/account/signup', {
+      method: 'POST',
+      body: {
+        username: payload.username,
+        display_name: payload.displayName,
+        password: payload.password,
+        email: payload.email,
+      },
+    }).then(res => res.account);
+  },
+
+  loginAccount(username: string, password: string): Promise<BackendAccount> {
+    return backendFetch<{ account: BackendAccount }>('/account/login', {
+      method: 'POST',
+      body: { username, password },
+    }).then(res => res.account);
+  },
+
+  logoutAccount(): Promise<void> {
+    return backendFetch<{ authenticated: boolean }>('/account/session', { method: 'DELETE' }).then(() => undefined);
+  },
+
+  getAccount(): Promise<BackendAccount> {
+    return backendFetch<{ account: BackendAccount }>('/account/me').then(res => res.account);
+  },
+
+  awardAccountXp(amount: number): Promise<BackendAccount> {
+    return backendFetch<{ account: BackendAccount }>('/account/xp', {
+      method: 'POST',
+      body: { amount },
+    }).then(res => res.account);
   },
 };
