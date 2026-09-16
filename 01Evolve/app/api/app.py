@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 
+from fnmatch import fnmatch
+
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.api.security import (
@@ -41,11 +43,29 @@ api.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-api.add_middleware(TrustedHostMiddleware, allowed_hosts=get_allowed_hosts())
+
+def _host_header_is_allowed(request: Request) -> bool:
+    host = request.headers.get("host", "").split(":")[0]
+    if not host:
+        return False
+    return any(host == pattern or fnmatch(host, pattern) for pattern in get_allowed_hosts())
 
 
 @api.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    # Host validation (replaces TrustedHostMiddleware) with one exemption:
+    # /healthz is a static, non-sensitive liveness probe (no auth, no user
+    # data, nothing but {"ok": true}) that something inside this
+    # deployment's own AWS infrastructure hits directly with a Host header
+    # that will never be on 01DECK_ALLOWED_HOSTS -- observed live, hitting
+    # both Fargate tasks simultaneously every ~30s, independent of (and in
+    # addition to) the ALB's own per-target health check, which does send
+    # an allowed Host and always succeeds. That mismatch tripped the ECS
+    # deployment circuit breaker on two separate deploy attempts. Every
+    # other route still gets full Host validation, unchanged.
+    if request.url.path != "/healthz" and not _host_header_is_allowed(request):
+        return PlainTextResponse("Invalid host header", status_code=400)
+
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
