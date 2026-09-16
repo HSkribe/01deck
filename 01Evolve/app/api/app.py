@@ -81,18 +81,7 @@ async def add_security_headers(request: Request, call_next):
         # deploys.
         allowed = get_allowed_hosts()
         received = request.headers.get("host", "<no host header>")
-        # get_allowed_hosts() returned its no-config fallback in production
-        # despite the task definition showing 01DECK_ALLOWED_HOSTS set --
-        # narrow, temporary check for whether the key reaches this process
-        # at all. Reveals only this one already-non-sensitive var's raw
-        # value and a presence boolean, nothing else from the environment.
-        env_present = "01DECK_ALLOWED_HOSTS" in os.environ
-        raw_value = os.environ.get("01DECK_ALLOWED_HOSTS")
-        return PlainTextResponse(
-            f"Invalid host header: {received!r} not in {allowed!r} "
-            f"(env key present={env_present}, raw value={raw_value!r})",
-            status_code=400,
-        )
+        return PlainTextResponse(f"Invalid host header: {received!r} not in {allowed!r}", status_code=400)
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
