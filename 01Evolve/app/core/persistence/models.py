@@ -235,6 +235,10 @@ class UserAccountRecord(Base):
     password_iterations: Mapped[int] = mapped_column(Integer())
     xp: Mapped[int] = mapped_column(Integer(), default=0)
     level: Mapped[int] = mapped_column(Integer(), default=1)
+    # Flags this row as a platform-controlled service account (e.g. Bosun the AI
+    # co-host) so the frontend can render it differently from human accounts.
+    # Default False — every real user signup gets a human account.
+    is_system_account: Mapped[bool] = mapped_column(Boolean(), default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -251,4 +255,103 @@ class SupportBenchmarkRunRecord(Base):
     selection_strategy: Mapped[str] = mapped_column(String(32), default="balanced")
     adapter_mode: Mapped[str] = mapped_column(String(16), default="mock")
     report_json: Mapped[str] = mapped_column(Text(), default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+# ---------------------------------------------------------------------------
+# Social layer — presence, global chat, direct messages, forum
+# ---------------------------------------------------------------------------
+
+
+class PresenceHeartbeatRecord(Base):
+    """Tracks when each account last signalled it was online.
+
+    Updated on every POST /presence/heartbeat; queried by GET /presence/online
+    to return accounts active in the last 2 minutes. Bosun's row is excluded
+    from the recency filter so he always appears online without needing a
+    heartbeat daemon.
+    """
+
+    __tablename__ = "presence_heartbeats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class GlobalChatMessageRecord(Base):
+    """A single message posted to a named global chat channel (e.g. 'general').
+
+    Channels are soft-namespaced strings; 'general' is the default and the
+    only one the initial frontend uses, but the schema supports adding more
+    (e.g. 'announcements', 'trading') without a migration.
+
+    The auto-increment `id` is exposed directly as `message_id` to clients
+    for cursor-based polling (the after_id param on GET /chat/global).
+    Using the PK directly keeps inserts single-phase and integer comparisons
+    for cursor filtering are as cheap as possible.
+    """
+
+    __tablename__ = "global_chat_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel: Mapped[str] = mapped_column(String(64), index=True, default="general")
+    sender_account_id: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class DirectConversationRecord(Base):
+    """The persistent envelope for a 1:1 conversation between two accounts.
+
+    account_a_id and account_b_id are stored in lexicographic order so that
+    looking up "the conversation between A and B" is a single deterministic
+    SELECT regardless of who initiated it. Enforced in the repository
+    create/find method — callers never need to think about ordering.
+    """
+
+    __tablename__ = "direct_conversations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    account_a_id: Mapped[str] = mapped_column(String(64), index=True)
+    account_b_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    # Denormalised for fast "conversations ordered by recent activity" queries
+    # on GET /messages/conversations without a subquery over all messages.
+    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class DirectMessageRecord(Base):
+    """A single message inside a DirectConversationRecord."""
+
+    __tablename__ = "direct_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), index=True)
+    sender_account_id: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ForumThreadRecord(Base):
+    """A top-level discussion thread in the Forum."""
+
+    __tablename__ = "forum_threads"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    author_account_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    body: Mapped[str] = mapped_column(Text())
+    # JSON-serialised list[str]; stored as text to avoid a join table for
+    # what is essentially display metadata, not a relational key.
+    tags_json: Mapped[str] = mapped_column(Text(), default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ForumReplyRecord(Base):
+    """A reply to a ForumThreadRecord."""
+
+    __tablename__ = "forum_replies"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reply_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    thread_id: Mapped[str] = mapped_column(String(64), index=True)
+    author_account_id: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

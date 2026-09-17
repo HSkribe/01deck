@@ -676,5 +676,71 @@ class AccountPublic(BaseModel):
     display_name: str
     xp: int
     level: int
+    is_system_account: bool = False
     created_at: datetime
     last_login_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Social layer response models
+# ---------------------------------------------------------------------------
+
+
+class AccountPresence(BaseModel):
+    """Minimal public identity used in the online roster and message/forum author fields."""
+
+    account_id: str
+    username: str
+    display_name: str
+    is_system_account: bool = False
+
+
+class GlobalChatMessage(BaseModel):
+    """A single message in a global chat channel, with sender info already resolved."""
+
+    message_id: int
+    channel: str
+    sender: AccountPresence
+    content: str
+    created_at: datetime
+
+
+class DirectConversation(BaseModel):
+    """An account's view of one of its 1:1 conversations."""
+
+    conversation_id: str
+    other_participant: AccountPresence
+    last_message_at: datetime
+    last_message_preview: str | None = None
+
+
+class DirectMessage(BaseModel):
+    """A single message inside a direct conversation."""
+
+    message_id: int
+    conversation_id: str
+    sender: AccountPresence
+    content: str
+    created_at: datetime
+
+
+class ForumThread(BaseModel):
+    """A forum thread with author info and reply count resolved."""
+
+    thread_id: str
+    author: AccountPresence
+    title: str
+    body: str
+    tags: list[str]
+    reply_count: int
+    created_at: datetime
+
+
+class ForumReply(BaseModel):
+    """A reply to a forum thread, with author info resolved."""
+
+    reply_id: str
+    thread_id: str
+    author: AccountPresence
+    content: str
+    created_at: datetime
