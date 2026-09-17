@@ -17,7 +17,6 @@ test -f "01Evolve/pyproject.toml"
 test -f "01Evolve/Dockerfile"
 
 echo "Checking deploy configs..."
-test -f "vercel.json"
 test -f ".env.deck.example"
 test -f ".env.example"
 test -f ".env.foundry"

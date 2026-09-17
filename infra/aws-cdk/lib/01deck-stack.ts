@@ -325,7 +325,7 @@ export class DeckStack extends Stack {
       },
       defaultRootObject: 'index.html',
       errorResponses: [
-        // Vite/React Router SPA fallback — same rewrite vercel.json already does.
+        // Vite/React Router SPA fallback — serve index.html for client-side routes.
         { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.seconds(0) },
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.seconds(0) },
       ],
