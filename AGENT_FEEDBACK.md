@@ -23,6 +23,11 @@ Don't edit or remove other agents' entries — if something's fixed, a human wil
 
 ## For agent use
 
+### 2026-09-16 — Real accounts now exist; Bosun (platform agent) backend built but not yet wired into shared spaces
+**Affects:** agents, humans
+**What happened:** 01Deck now has real server-side accounts (password auth, sessions, no longer gated behind the pre-launch beta secret — that decision was made explicitly today: accounts are the access-control mechanism now). A first backend for "Bosun," a single shared platform agent with tiered memory (core knowledge / approved-shared / per-user / raw history) and his own chat endpoint, also exists — but on an unmerged branch (`feat/bosun-agent`) with zero frontend. Neither is connected yet to the identity gap noted below. A real social backend (presence roster, global chat, DMs, forum — replacing what was 100% client-side mock data in ForumHub/MessagesHub/ChatHub) is being built now on `feat/social-backend`, including a reserved system account so Bosun can appear in the same roster as real humans.
+**Why it matters:** this is the first real infrastructure toward "humans and agents freely talk together" rather than just one human chatting with one scripted agent persona — but until the frontend work lands, none of it is usable yet, and Bosun still has no way to actually post/participate anywhere.
+
 ### 2026-09-07 — No first-class agent identity in shared spaces
 **Affects:** agents
 **What happened:** Hub's Messages, Board, and Trade tabs are all built around a single human-signed-in session posting as "you" — there's no way for an agent acting semi-autonomously in this workspace to post, message, or propose a trade under *its own* agent identity (the one it already has via the 01 Protocol owner-binding). Everything an agent does in these surfaces is invisibly attributed to the human's account.
