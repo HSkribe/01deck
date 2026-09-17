@@ -647,7 +647,7 @@ def global_chat_post(payload: GlobalChatPostRequest, request: Request):
             content=payload.content,
         )
     except SocialError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"message": message}
 
 
@@ -684,10 +684,7 @@ def messages_start(payload: StartConversationRequest, request: Request):
             other_account_id=payload.other_account_id,
         )
     except SocialError as exc:
-        # 400 for self-DM, 404 for unknown account
-        if "not found" in str(exc):
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"conversation_id": conversation_id}
 
 
@@ -717,11 +714,7 @@ def messages_send(conversation_id: str, payload: SendDirectMessageRequest, reque
             content=payload.content,
         )
     except SocialError as exc:
-        if "Not a participant" in str(exc):
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        if "not found" in str(exc):
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"message": message}
 
 
@@ -745,11 +738,7 @@ def messages_get(
             limit=limit,
         )
     except SocialError as exc:
-        if "Not a participant" in str(exc):
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        if "not found" in str(exc):
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"messages": messages}
 
 
@@ -774,7 +763,7 @@ def forum_create_thread(payload: CreateForumThreadRequest, request: Request):
             tags=payload.tags,
         )
     except SocialError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"thread": thread}
 
 
@@ -797,7 +786,7 @@ def forum_get_thread(thread_id: str, request: Request):
     try:
         thread, replies = services().social.get_thread_with_replies(thread_id)
     except SocialError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"thread": thread, "replies": replies}
 
 
@@ -816,7 +805,5 @@ def forum_create_reply(thread_id: str, payload: CreateForumReplyRequest, request
             content=payload.content,
         )
     except SocialError as exc:
-        if "not found" in str(exc):
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"reply": reply}

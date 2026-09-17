@@ -11,7 +11,15 @@ from app.core.schemas.models import (
 
 
 class SocialError(ValueError):
-    """Raised for social-layer validation failures; callers map this to 400/403/404."""
+    """Raised for social-layer validation/access failures. Carries the intended
+    HTTP status code explicitly, set at the point each error is actually known
+    (400 validation, 403 not-a-participant, 404 not-found) rather than making
+    the API layer pattern-match on the message text to guess it -- that would
+    silently break the moment anyone rewords a message."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class SocialService:
@@ -72,10 +80,10 @@ class SocialService:
         Raises SocialError (404) if the other account does not exist.
         """
         if caller_account_id == other_account_id:
-            raise SocialError("Cannot start a conversation with yourself")
+            raise SocialError("Cannot start a conversation with yourself", status_code=400)
         other = self.repository.get_account_by_id(other_account_id)
         if not other:
-            raise SocialError(f"Account {other_account_id!r} not found")
+            raise SocialError(f"Account {other_account_id!r} not found", status_code=404)
         conv = self.repository.find_or_create_direct_conversation(
             caller_account_id, other_account_id
         )
@@ -94,9 +102,9 @@ class SocialService:
             raise SocialError("Message content must be 4000 characters or fewer")
         conv = self.repository.get_direct_conversation(conversation_id)
         if not conv:
-            raise SocialError(f"Conversation {conversation_id!r} not found")
+            raise SocialError(f"Conversation {conversation_id!r} not found", status_code=404)
         if caller_account_id not in (conv.account_a_id, conv.account_b_id):
-            raise SocialError("Not a participant in this conversation")
+            raise SocialError("Not a participant in this conversation", status_code=403)
         return self.repository.send_direct_message(
             conversation_id=conversation_id,
             sender_account_id=caller_account_id,
@@ -109,9 +117,9 @@ class SocialService:
         """Fetch DMs; raises SocialError (403) if caller isn't a participant."""
         conv = self.repository.get_direct_conversation(conversation_id)
         if not conv:
-            raise SocialError(f"Conversation {conversation_id!r} not found")
+            raise SocialError(f"Conversation {conversation_id!r} not found", status_code=404)
         if caller_account_id not in (conv.account_a_id, conv.account_b_id):
-            raise SocialError("Not a participant in this conversation")
+            raise SocialError("Not a participant in this conversation", status_code=403)
         limit = max(1, min(limit, 100))
         return self.repository.get_direct_messages(
             conversation_id=conversation_id, after_id=after_id, limit=limit
@@ -151,7 +159,7 @@ class SocialService:
         """Returns (thread, replies) or raises SocialError (404)."""
         result = self.repository.get_forum_thread_with_replies(thread_id)
         if not result:
-            raise SocialError(f"Thread {thread_id!r} not found")
+            raise SocialError(f"Thread {thread_id!r} not found", status_code=404)
         return result
 
     def create_reply(
@@ -163,7 +171,7 @@ class SocialService:
             raise SocialError("Reply content must be 4000 characters or fewer")
         # 404 if the thread doesn't exist
         if not self.repository.get_forum_thread(thread_id):
-            raise SocialError(f"Thread {thread_id!r} not found")
+            raise SocialError(f"Thread {thread_id!r} not found", status_code=404)
         return self.repository.create_forum_reply(
             thread_id=thread_id,
             author_account_id=author_account_id,
