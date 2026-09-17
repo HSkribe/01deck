@@ -57,6 +57,22 @@ def _host_header_is_allowed(request: Request) -> bool:
 
 @api.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    # CloudFront's /api/* behavior forwards the full path (including /api)
+    # to this origin unchanged -- OriginPath is empty, nothing strips it --
+    # but every route here is registered at the bare path (/healthz,
+    # /account/signup, etc, no /api prefix). Real public traffic 404'd on
+    # every single request until now; CloudFront's custom error response
+    # then silently rewrote that 404 into the SPA's index.html (200),
+    # which is what broke JSON.parse on the frontend. Confirmed live by
+    # hitting the ALB directly at the exact path CloudFront forwards.
+    # Strip the prefix here, once, before routing, rather than renaming
+    # every route or restructuring the app into a mounted sub-app.
+    path = request.scope["path"]
+    if path == "/api":
+        request.scope["path"] = "/"
+    elif path.startswith("/api/"):
+        request.scope["path"] = path[len("/api"):]
+
     # Host validation (replaces TrustedHostMiddleware) with one exemption:
     # /healthz is a static, non-sensitive liveness probe (no auth, no user
     # data, nothing but {"ok": true}) that something inside this
@@ -66,13 +82,9 @@ async def add_security_headers(request: Request, call_next):
     # addition to) the ALB's own per-target health check, which does send
     # an allowed Host and always succeeds. That mismatch tripped the ECS
     # deployment circuit breaker on two separate deploy attempts. Every
-    # other route still gets full Host validation, unchanged.
-    #
-    # Exempts both /healthz (the ALB target group's direct check, bypassing
-    # CloudFront entirely) and /api/healthz (real public traffic arrives
-    # with CloudFront's /api/* prefix still attached -- checking only the
-    # bare path here was a bug: it silently never matched real requests).
-    if request.url.path not in ("/healthz", "/api/healthz") and not _host_header_is_allowed(request):
+    # other route still gets full Host validation, unchanged. Only needs
+    # to check the bare path now that /api/* is normalized away above.
+    if request.url.path != "/healthz" and not _host_header_is_allowed(request):
         # Includes the actual received Host and the current allow-list.
         # Neither is sensitive -- both are already-public DNS names -- and
         # this is the fastest way to diagnose a Host mismatch without
