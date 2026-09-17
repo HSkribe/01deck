@@ -25,7 +25,16 @@ if [ -z "${BUCKET_NAME}" ] || [ -z "${DISTRIBUTION_ID}" ]; then
   exit 1
 fi
 
-echo "Building deck frontend..."
+# /api/* is routed by this same CloudFront distribution to the ALB (see
+# infra/aws-cdk/lib/01deck-stack.ts), so calling it same-origin avoids CORS
+# entirely and never goes stale when DNS/the domain changes later. Without
+# this, Vite falls back to backendApi.ts's http://127.0.0.1:8000 default --
+# which silently bakes localhost into the production bundle and breaks
+# every API call in the browser with a network error. Override by exporting
+# VITE_01EVOLVE_API_BASE_URL yourself before running this script (e.g. once
+# deck.01ai.ai DNS is live and you want the custom domain baked in instead).
+export VITE_01EVOLVE_API_BASE_URL="${VITE_01EVOLVE_API_BASE_URL:-https://${CLOUDFRONT_DOMAIN}/api}"
+echo "Building deck frontend with VITE_01EVOLVE_API_BASE_URL=${VITE_01EVOLVE_API_BASE_URL}..."
 npm run build:deck
 
 echo "Syncing dist/ to s3://${BUCKET_NAME}..."

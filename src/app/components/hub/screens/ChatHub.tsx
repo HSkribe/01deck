@@ -10,6 +10,7 @@ import {
   type SocialGlobalChatMessage,
 } from '../../../services/backendApi';
 import { chatChannels, type ChatChannel } from '../../../data/chatData';
+import { BosunChatModal } from './BosunChatModal';
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function isConsecutive(
 
 // ─── Online Roster ────────────────────────────────────────
 
-function OnlineRoster({ onDmUser }: { onDmUser: (accountId: string) => void }) {
+function OnlineRoster({ onUserClick }: { onUserClick: (account: AccountPresence) => void }) {
   const { currentTheme: t } = useApp();
   const { user } = useAuth();
   const [roster, setRoster] = useState<AccountPresence[]>([]);
@@ -80,14 +81,14 @@ function OnlineRoster({ onDmUser }: { onDmUser: (accountId: string) => void }) {
           {shown.map(p => (
             <motion.button
               key={p.account_id}
-              onClick={() => onDmUser(p.account_id)}
+              onClick={() => onUserClick(p)}
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.97 }}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left"
               style={{ background: 'transparent' }}
               title={
                 p.is_system_account
-                  ? p.display_name
+                  ? `Chat with ${p.display_name}`
                   : `Message ${p.display_name}`
               }
             >
@@ -241,6 +242,7 @@ export function ChatHub() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [bosunChatWith, setBosunChatWith] = useState<AccountPresence | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   // Tracks the highest message_id we've rendered — used as the after_id poll
@@ -346,6 +348,17 @@ export function ChatHub() {
     setCurrentView('messages');
   };
 
+  // System accounts (Bosun) don't participate in the generic DM backend --
+  // nothing there ever replies as them. Route those clicks to a dedicated
+  // chat surface that hits /bosun/chat directly instead.
+  const handleRosterUserClick = (account: AccountPresence) => {
+    if (account.is_system_account) {
+      setBosunChatWith(account);
+      return;
+    }
+    void handleDmUser(account.account_id);
+  };
+
   const activeChannel =
     chatChannels.find(c => c.id === activeChannelId) ?? chatChannels[0];
 
@@ -383,7 +396,7 @@ export function ChatHub() {
         </div>
 
         {/* Online roster — real presence data, polls every 25 s */}
-        <OnlineRoster onDmUser={handleDmUser} />
+        <OnlineRoster onUserClick={handleRosterUserClick} />
       </div>
 
       {/* ── Message pane ─────────────────────────────────── */}
@@ -513,6 +526,13 @@ export function ChatHub() {
           </div>
         </div>
       </div>
+
+      {bosunChatWith && (
+        <BosunChatModal
+          account={bosunChatWith}
+          onClose={() => setBosunChatWith(null)}
+        />
+      )}
     </div>
   );
 }

@@ -126,6 +126,16 @@ export interface SocialForumReply {
   created_at: string; // ISO 8601
 }
 
+/** Bosun's reply to a single /bosun/chat turn. There is no history endpoint —
+ * only this deployment's own tiered memory persists across turns server-side;
+ * the visible transcript is session-local (see BosunChatModal). */
+export interface BosunChatReply {
+  text: string;
+  model: string;
+  remembered_about_me: boolean;
+  proposed_for_everyone: boolean;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const backendApi = {
@@ -342,6 +352,28 @@ export const backendApi = {
     return backendFetch<{ reply: SocialForumReply }>(`/forum/threads/${threadId}/replies`, {
       method: 'POST',
       body: { content },
+    });
+  },
+
+  // ─── Bosun ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Send one message to Bosun and get his reply. Account-gated (401 if not
+   * signed in), rate-limited server-side (per-account and aggregate, since
+   * he runs on one shared LLM key). remember flags are opt-in per turn —
+   * nothing is remembered just from asking a question.
+   */
+  bosunChat(
+    message: string,
+    opts: { rememberAboutMe?: boolean; rememberForEveryone?: boolean } = {},
+  ): Promise<BosunChatReply> {
+    return backendFetch<BosunChatReply>('/bosun/chat', {
+      method: 'POST',
+      body: {
+        message,
+        remember_about_me: opts.rememberAboutMe ?? false,
+        remember_for_everyone: opts.rememberForEveryone ?? false,
+      },
     });
   },
 };
