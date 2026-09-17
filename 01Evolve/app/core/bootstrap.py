@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.core.accounts.service import AccountService
 from app.core.agents.service import AgentService
+from app.core.bosun.service import BosunService
 from app.core.evaluation.service import EvaluationService
 from app.core.evolution.service import EvolutionService
 from app.core.evolution.support_service import SupportOptimizationService
@@ -26,6 +27,7 @@ class ServiceContainer:
     support: SupportOptimizationService
     accounts: AccountService
     social: SocialService
+    bosun: BosunService
 
 
 def build_services(db_url: str | None = None, plugin_config_path: str | Path | None = None) -> ServiceContainer:
@@ -46,6 +48,7 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
     # Ensure Bosun's system account and presence row exist on every boot.
     # This is idempotent — safe to call on every startup including tests.
     repository.ensure_bosun_account()
+    bosun = BosunService(repository)
     return ServiceContainer(
         repository=repository,
         lifecycle=lifecycle,
@@ -56,4 +59,5 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
         support=support,
         accounts=accounts,
         social=social,
+        bosun=bosun,
     )

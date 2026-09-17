@@ -243,6 +243,61 @@ class UserAccountRecord(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class BosunCoreKnowledgeRecord(Base):
+    """Tier 1: shared, hand-curated, always injected in full — Bosun's
+    personality and standing platform facts. Small by design; never grows
+    from user interaction."""
+
+    __tablename__ = "bosun_core_knowledge"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    content: Mapped[str] = mapped_column(Text())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class BosunSharedMemoryRecord(Base):
+    """Tier 2: shared, retrieved by relevance rather than injected in full.
+    Never populated directly from a user's conversation — status starts
+    'pending' and only becomes visible to retrieval once explicitly
+    approved (see BosunService.approve_shared_memory), so one user's
+    private conversation can't silently become everyone's knowledge."""
+
+    __tablename__ = "bosun_shared_memories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    memory_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content: Mapped[str] = mapped_column(Text())
+    source_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | approved | rejected
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BosunUserMemoryRecord(Base):
+    """Tier 3: private per-account facts, always loaded in full for that
+    account's own requests only. Bounded per account (pruned oldest-first
+    by BosunService) so aggregate storage scales with user count, not
+    message volume."""
+
+    __tablename__ = "bosun_user_memories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class BosunConversationTurnRecord(Base):
+    """Tier 4: raw per-account chat history. Grows with interaction volume
+    by design — retrieval pulls only the top-K relevant turns per request
+    (see BosunService._retrieve_relevant_turns), never the full history."""
+
+    __tablename__ = "bosun_conversation_turns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user | bosun
+    content: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class SupportBenchmarkRunRecord(Base):
     __tablename__ = "support_benchmark_runs"
     id: Mapped[int] = mapped_column(primary_key=True)

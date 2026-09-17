@@ -705,6 +705,11 @@ class GlobalChatMessage(BaseModel):
     created_at: datetime
 
 
+class BosunUserMemory(BaseModel):
+    content: str
+    created_at: datetime
+
+
 class DirectConversation(BaseModel):
     """An account's view of one of its 1:1 conversations."""
 
@@ -744,3 +749,19 @@ class ForumReply(BaseModel):
     author: AccountPresence
     content: str
     created_at: datetime
+
+
+class BosunSharedMemoryProposal(BaseModel):
+    memory_id: str
+    content: str
+    source_account_id: str | None
+    status: str
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class BosunChatReply(BaseModel):
+    text: str
+    model: str
+    remembered_about_me: bool = False
+    proposed_for_everyone: bool = False
