@@ -1,63 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  MessageSquare, ChevronLeft, Plus, ThumbsUp, Reply, Pin,
-  Eye, Search, X, Send, Tag, Sparkles,
+  MessageSquare, ChevronLeft, Plus, Reply,
+  Search, X, Send, Tag, Loader2, AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
-import { Agent } from '../../../data/agents';
-import { getActiveApiKey, generateAgentCompletion } from '../../../services/llmClient';
+import { useAuth } from '../../../context/AuthContext';
 import {
-  ForumThread, ForumReply, ForumTag, ForumAuthor,
-  TAG_CONFIG, seedThreads, agentForumAuthor,
-} from '../../../data/forumData';
-
-// ─── Agent auto-response ────────────────────────────────────
-
-// Rough tag → agent category routing so replies come from a relevant specialist.
-const TAG_TO_CATEGORY: Partial<Record<ForumTag, string>> = {
-  bug: 'code',
-  strategy: 'strategy',
-  meta: 'strategy',
-  question: 'research',
-  showcase: 'creative',
-  feedback: 'comms',
-};
-
-function pickRespondingAgent(tags: ForumTag[], allAgents: Agent[]): Agent | null {
-  if (allAgents.length === 0) return null;
-  const wantedCategories = new Set(tags.map(t => TAG_TO_CATEGORY[t]).filter(Boolean));
-  const matches = allAgents.filter(a => wantedCategories.has(a.category));
-  const pool = matches.length > 0 ? matches : allAgents;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-const AGENT_FALLBACK_REPLIES = [
-  'Logging this one — will circle back with a fuller answer once I\'ve had a chance to dig in.',
-  'Good question. Short version: it depends on scope, but happy to go deeper if you share more context.',
-  'Noted. Flagging this thread so I can follow up properly.',
-  'Interesting thread — bookmarking this to think through properly.',
-];
-
-/** Have a roster agent respond to a human forum post. Uses a live LLM if the user has a key configured, otherwise a canned in-character fallback. */
-async function generateForumAgentReply(agent: Agent, threadTitle: string, contextText: string): Promise<string> {
-  const activeKey = getActiveApiKey();
-  if (!activeKey) {
-    return AGENT_FALLBACK_REPLIES[Math.floor(Math.random() * AGENT_FALLBACK_REPLIES.length)];
-  }
-  try {
-    return await generateAgentCompletion({
-      provider: activeKey.provider,
-      apiKey: activeKey.key,
-      systemPrompt: `You are ${agent.name}, a ${agent.role} (${agent.specialization}) participating in the public 01Deck community forum under 01 Protocol ${agent.protocolId || 'v3.0'}. Reply helpfully and specifically to the post below, in character, in 2-4 sentences. This is a public forum reply, not a private chat — do not repeat the question back, get straight to useful advice.`,
-      messages: [
-        { role: 'user', content: `Thread: "${threadTitle}"\n\n${contextText}` },
-      ],
-    });
-  } catch {
-    return AGENT_FALLBACK_REPLIES[Math.floor(Math.random() * AGENT_FALLBACK_REPLIES.length)];
-  }
-}
+  backendApi,
+  type SocialForumThread,
+  type SocialForumReply,
+} from '../../../services/backendApi';
+import { ForumTag, TAG_CONFIG } from '../../../data/forumData';
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -69,36 +23,28 @@ function timeAgo(iso: string) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-const ME_AUTHOR: ForumAuthor = {
-  id: 'me',
-  name: 'You',
-  avatar: 'https://api.dicebear.com/9.x/pixel-art/svg?seed=player',
-  level: 12,
-};
+function avatarUrl(username: string) {
+  return `https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(username)}`;
+}
 
-const ALL_TAGS: ForumTag[] = ['decks', 'strategy', 'question', 'showcase', 'meta', 'bug', 'feedback', 'off-topic'];
+const ALL_TAGS: ForumTag[] = [
+  'decks', 'strategy', 'question', 'showcase', 'meta', 'bug', 'feedback', 'off-topic',
+];
 
 // ─── Tag badge ────────────────────────────────────────────
 
-function AgentTag() {
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider"
-      style={{ background: 'rgba(255,77,166,0.15)', color: '#ff4da6', border: '1px solid rgba(255,77,166,0.35)' }}
-    >
-      <Sparkles size={9} /> Agent
-    </span>
-  );
-}
+const FALLBACK_TAG_STYLE = { label: '', color: '#6b7280', bg: 'rgba(107,114,128,0.15)' };
 
-function TagBadge({ tag }: { tag: ForumTag }) {
-  const cfg = TAG_CONFIG[tag];
+function TagBadge({ tag }: { tag: string }) {
+  const cfg = (tag in TAG_CONFIG)
+    ? TAG_CONFIG[tag as ForumTag]
+    : { ...FALLBACK_TAG_STYLE, label: tag };
   return (
     <span
       className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
       style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}40` }}
     >
-      {cfg.label}
+      {cfg.label || tag}
     </span>
   );
 }
@@ -108,9 +54,11 @@ function TagBadge({ tag }: { tag: ForumTag }) {
 function NewThreadModal({
   onClose,
   onSubmit,
+  submitting,
 }: {
   onClose: () => void;
   onSubmit: (title: string, body: string, tags: ForumTag[]) => void;
+  submitting: boolean;
 }) {
   const { currentTheme: t } = useApp();
   const [title, setTitle] = useState('');
@@ -119,11 +67,13 @@ function NewThreadModal({
 
   const toggleTag = (tag: ForumTag) => {
     setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : prev.length < 3 ? [...prev, tag] : prev,
+      prev.includes(tag)
+        ? prev.filter(x => x !== tag)
+        : prev.length < 3 ? [...prev, tag] : prev,
     );
   };
 
-  const canSubmit = title.trim().length > 0 && body.trim().length > 0 && selectedTags.length > 0;
+  const canSubmit = title.trim().length > 0 && body.trim().length > 0 && selectedTags.length > 0 && !submitting;
 
   return (
     <motion.div
@@ -150,7 +100,9 @@ function NewThreadModal({
         >
           <div className="flex items-center gap-2">
             <MessageSquare size={14} style={{ color: t.accent }} />
-            <span className="text-sm font-medium" style={{ color: t.text }}>New Thread</span>
+            <span className="text-sm font-medium" style={{ color: t.text }}>
+              New Thread
+            </span>
           </div>
           <motion.button onClick={onClose} whileHover={{ scale: 1.1 }} style={{ color: t.textMuted }}>
             <X size={14} />
@@ -158,7 +110,6 @@ function NewThreadModal({
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Title */}
           <input
             type="text"
             placeholder="Thread title…"
@@ -169,7 +120,6 @@ function NewThreadModal({
             style={{ color: t.text, border: `1px solid ${t.border}`, background: t.surface2 }}
           />
 
-          {/* Body */}
           <textarea
             placeholder="What's on your mind?"
             value={body}
@@ -179,7 +129,6 @@ function NewThreadModal({
             style={{ color: t.text, border: `1px solid ${t.border}`, background: t.surface2 }}
           />
 
-          {/* Tags */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-xs" style={{ color: t.textMuted }}>
               <Tag size={11} />
@@ -209,7 +158,6 @@ function NewThreadModal({
             </div>
           </div>
 
-          {/* Submit */}
           <div className="flex justify-end gap-2">
             <motion.button
               onClick={onClose}
@@ -224,13 +172,14 @@ function NewThreadModal({
               whileHover={{ scale: canSubmit ? 1.03 : 1 }}
               whileTap={{ scale: canSubmit ? 0.97 : 1 }}
               disabled={!canSubmit}
-              className="text-xs px-4 py-2 rounded-lg"
+              className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg"
               style={{
                 background: canSubmit ? t.accent : t.surface3,
                 color: canSubmit ? t.bg : t.textMuted,
                 opacity: canSubmit ? 1 : 0.5,
               }}
             >
+              {submitting && <Loader2 size={11} className="animate-spin" />}
               Post Thread
             </motion.button>
           </div>
@@ -244,28 +193,62 @@ function NewThreadModal({
 
 function ThreadDetail({
   thread,
+  initialReplies,
   onBack,
-  onLikeReply,
   onAddReply,
+  canReply,
 }: {
-  thread: ForumThread;
+  thread: SocialForumThread;
+  initialReplies: SocialForumReply[];
   onBack: () => void;
-  onLikeReply: (threadId: string, replyId: string) => void;
-  onAddReply: (threadId: string, content: string) => void;
+  onAddReply: (threadId: string, content: string) => Promise<SocialForumReply>;
+  canReply: boolean;
 }) {
   const { currentTheme: t } = useApp();
+  const { user } = useAuth();
+  const [replies, setReplies] = useState<SocialForumReply[]>(initialReplies);
   const [replyText, setReplyText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadIdRef = useRef(thread.thread_id);
+  threadIdRef.current = thread.thread_id;
 
-  const handleSubmit = () => {
-    if (!replyText.trim()) return;
-    onAddReply(thread.id, replyText.trim());
-    setReplyText('');
-  };
+  // Poll for new replies while this thread is open.
+  useEffect(() => {
+    const pollReplies = async () => {
+      try {
+        const { replies: fetched } = await backendApi.getForumThread(thread.thread_id);
+        if (threadIdRef.current === thread.thread_id) {
+          setReplies(fetched);
+        }
+      } catch {
+        // silent poll failures
+      }
+    };
+    const id = setInterval(() => void pollReplies(), 15_000);
+    return () => clearInterval(id);
+  }, [thread.thread_id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [thread.replies.length]);
+  }, [replies.length]);
+
+  const handleSubmit = async () => {
+    const text = replyText.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    setReplyError(null);
+    try {
+      const reply = await onAddReply(thread.thread_id, text);
+      setReplies(prev => [...prev, reply]);
+      setReplyText('');
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to post reply.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <motion.div
@@ -291,7 +274,9 @@ function ThreadDetail({
           Forum
         </motion.button>
         <div className="h-3 w-px" style={{ background: t.border }} />
-        <span className="text-xs flex-1 truncate" style={{ color: t.text }}>{thread.title}</span>
+        <span className="text-xs flex-1 truncate" style={{ color: t.text }}>
+          {thread.title}
+        </span>
       </div>
 
       {/* Scrollable content */}
@@ -303,58 +288,60 @@ function ThreadDetail({
         >
           <div className="flex items-start gap-3">
             <img
-              src={thread.author.avatar}
-              alt={thread.author.name}
+              src={avatarUrl(thread.author.username)}
+              alt={thread.author.display_name}
               className="w-8 h-8 rounded-full flex-shrink-0"
               style={{ border: `1.5px solid ${t.border}` }}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-medium" style={{ color: t.text }}>{thread.author.name}</span>
-                {thread.author.isAgent ? <AgentTag /> : (
-                  <span className="text-[10px]" style={{ color: t.textMuted }}>Lv.{thread.author.level}</span>
-                )}
-                <span className="text-[10px]" style={{ color: t.textMuted }}>{timeAgo(thread.timestamp)}</span>
-                {thread.pinned && (
-                  <span className="flex items-center gap-1 text-[10px]" style={{ color: '#f59e0b' }}>
-                    <Pin size={10} />
-                    Pinned
-                  </span>
-                )}
+                <span className="text-xs font-medium" style={{ color: t.text }}>
+                  {thread.author.display_name}
+                </span>
+                <span className="text-[10px]" style={{ color: t.textMuted }}>
+                  @{thread.author.username}
+                </span>
+                <span className="text-[10px]" style={{ color: t.textMuted }}>
+                  {timeAgo(thread.created_at)}
+                </span>
               </div>
-              <h2 className="text-sm font-semibold mt-1" style={{ color: t.text }}>{thread.title}</h2>
+              <h2 className="text-sm font-semibold mt-1" style={{ color: t.text }}>
+                {thread.title}
+              </h2>
             </div>
           </div>
 
-          <p className="text-xs leading-relaxed" style={{ color: t.text, whiteSpace: 'pre-wrap' }}>
+          <p
+            className="text-xs leading-relaxed"
+            style={{ color: t.text, whiteSpace: 'pre-wrap' }}
+          >
             {thread.body}
           </p>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {thread.tags.map(tag => <TagBadge key={tag} tag={tag} />)}
-            <span className="ml-auto text-[10px]" style={{ color: t.textMuted }}>
-              <Eye size={10} className="inline mr-1" />{thread.views} views
-            </span>
+            {thread.tags.map(tag => (
+              <TagBadge key={tag} tag={tag} />
+            ))}
           </div>
         </div>
 
         {/* Replies */}
-        {thread.replies.length > 0 && (
+        {replies.length > 0 && (
           <div className="space-y-3">
             <div className="text-xs" style={{ color: t.textMuted }}>
-              {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
+              {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
             </div>
-            {thread.replies.map((reply, idx) => (
+            {replies.map((reply, idx) => (
               <motion.div
-                key={reply.id}
+                key={reply.reply_id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
                 className="flex gap-3"
               >
                 <img
-                  src={reply.author.avatar}
-                  alt={reply.author.name}
+                  src={avatarUrl(reply.author.username)}
+                  alt={reply.author.display_name}
                   className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5"
                   style={{ border: `1.5px solid ${t.border}` }}
                 />
@@ -363,21 +350,16 @@ function ThreadDetail({
                   style={{ background: t.surface2, border: `1px solid ${t.border}` }}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium" style={{ color: t.text }}>{reply.author.name}</span>
-                    {reply.author.isAgent && <AgentTag />}
-                    <span className="text-[10px]" style={{ color: t.textMuted }}>{timeAgo(reply.timestamp)}</span>
+                    <span className="text-xs font-medium" style={{ color: t.text }}>
+                      {reply.author.display_name}
+                    </span>
+                    <span className="text-[10px]" style={{ color: t.textMuted }}>
+                      {timeAgo(reply.created_at)}
+                    </span>
                   </div>
-                  <p className="text-xs leading-relaxed" style={{ color: t.text }}>{reply.content}</p>
-                  <motion.button
-                    onClick={() => onLikeReply(thread.id, reply.id)}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    className="flex items-center gap-1 mt-2 text-[10px]"
-                    style={{ color: t.textMuted }}
-                  >
-                    <ThumbsUp size={10} />
-                    {reply.likes}
-                  </motion.button>
+                  <p className="text-xs leading-relaxed" style={{ color: t.text }}>
+                    {reply.content}
+                  </p>
                 </div>
               </motion.div>
             ))}
@@ -389,38 +371,62 @@ function ThreadDetail({
 
       {/* Reply composer */}
       <div
-        className="flex items-center gap-2 p-3 flex-shrink-0"
+        className="flex flex-col gap-1.5 p-3 flex-shrink-0"
         style={{ borderTop: `1px solid ${t.border}`, background: t.surface2 }}
       >
-        <img
-          src={ME_AUTHOR.avatar}
-          alt="You"
-          className="w-6 h-6 rounded-full flex-shrink-0"
-          style={{ border: `1px solid ${t.border}` }}
-        />
-        <input
-          type="text"
-          placeholder="Write a reply…"
-          value={replyText}
-          onChange={e => setReplyText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
-          className="flex-1 bg-transparent outline-none text-xs"
-          style={{ color: t.text }}
-        />
-        <motion.button
-          onClick={handleSubmit}
-          disabled={!replyText.trim()}
-          whileHover={{ scale: replyText.trim() ? 1.05 : 1 }}
-          whileTap={{ scale: 0.95 }}
-          className="w-7 h-7 rounded-lg flex items-center justify-center"
-          style={{
-            background: replyText.trim() ? t.accent : t.surface3,
-            color: replyText.trim() ? t.bg : t.textMuted,
-            opacity: replyText.trim() ? 1 : 0.5,
-          }}
-        >
-          <Reply size={12} />
-        </motion.button>
+        {!canReply && (
+          <p className="text-[10px]" style={{ color: t.textMuted }}>
+            Sign in to a real account to reply.
+          </p>
+        )}
+        {replyError && (
+          <p className="text-[10px]" style={{ color: '#ef4444' }}>
+            {replyError}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          {user && (
+            <img
+              src={avatarUrl(user.username)}
+              alt="You"
+              className="w-6 h-6 rounded-full flex-shrink-0"
+              style={{ border: `1px solid ${t.border}` }}
+            />
+          )}
+          <input
+            type="text"
+            placeholder={canReply ? 'Write a reply…' : 'Sign in to reply…'}
+            value={replyText}
+            onChange={e => setReplyText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void handleSubmit();
+              }
+            }}
+            disabled={!canReply || submitting}
+            className="flex-1 bg-transparent outline-none text-xs"
+            style={{ color: t.text, opacity: canReply ? 1 : 0.5 }}
+          />
+          <motion.button
+            onClick={() => void handleSubmit()}
+            disabled={!replyText.trim() || !canReply || submitting}
+            whileHover={{ scale: replyText.trim() && canReply ? 1.05 : 1 }}
+            whileTap={{ scale: 0.95 }}
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{
+              background: replyText.trim() && canReply ? t.accent : t.surface3,
+              color: replyText.trim() && canReply ? t.bg : t.textMuted,
+              opacity: replyText.trim() && canReply ? 1 : 0.5,
+            }}
+          >
+            {submitting ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Reply size={12} />
+            )}
+          </motion.button>
+        </div>
       </div>
     </motion.div>
   );
@@ -432,7 +438,7 @@ function ThreadItem({
   thread,
   onClick,
 }: {
-  thread: ForumThread;
+  thread: SocialForumThread;
   onClick: () => void;
 }) {
   const { currentTheme: t } = useApp();
@@ -444,29 +450,42 @@ function ThreadItem({
       className="w-full text-left p-4 rounded-xl space-y-2"
       style={{ background: t.surface2, border: `1px solid ${t.border}` }}
     >
-      <div className="flex items-start gap-2">
-        {thread.pinned && <Pin size={11} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />}
-        <span className="text-sm font-medium leading-snug flex-1" style={{ color: t.text }}>{thread.title}</span>
-      </div>
-      <p className="text-[11px] line-clamp-2 leading-relaxed" style={{ color: t.textMuted }}>{thread.body}</p>
+      <span
+        className="text-sm font-medium leading-snug block"
+        style={{ color: t.text }}
+      >
+        {thread.title}
+      </span>
+
+      <p
+        className="text-[11px] line-clamp-2 leading-relaxed"
+        style={{ color: t.textMuted }}
+      >
+        {thread.body}
+      </p>
+
       <div className="flex items-center gap-2 flex-wrap">
-        {thread.tags.map(tag => <TagBadge key={tag} tag={tag} />)}
+        {thread.tags.map(tag => (
+          <TagBadge key={tag} tag={tag} />
+        ))}
         <div className="ml-auto flex items-center gap-3 text-[10px]" style={{ color: t.textMuted }}>
-          <span className="flex items-center gap-1"><Eye size={10} />{thread.views}</span>
-          <span className="flex items-center gap-1"><MessageSquare size={10} />{thread.replies.length}</span>
-          <span className="flex items-center gap-1"><ThumbsUp size={10} />{thread.likes}</span>
-          <span>{timeAgo(thread.timestamp)}</span>
+          <span className="flex items-center gap-1">
+            <MessageSquare size={10} />
+            {thread.reply_count}
+          </span>
+          <span>{timeAgo(thread.created_at)}</span>
         </div>
       </div>
+
       <div className="flex items-center gap-1.5">
-        <img src={thread.author.avatar} alt={thread.author.name} className="w-4 h-4 rounded-full" />
-        <span className="text-[10px]" style={{ color: t.textMuted }}>{thread.author.name}</span>
-        {thread.author.isAgent && <AgentTag />}
-        {!thread.author.isAgent && thread.replies.some(r => r.author.isAgent) && (
-          <span className="flex items-center gap-1 text-[9px]" style={{ color: '#ff4da6' }}>
-            <Sparkles size={9} /> Agent replied
-          </span>
-        )}
+        <img
+          src={avatarUrl(thread.author.username)}
+          alt={thread.author.display_name}
+          className="w-4 h-4 rounded-full"
+        />
+        <span className="text-[10px]" style={{ color: t.textMuted }}>
+          {thread.author.display_name}
+        </span>
       </div>
     </motion.button>
   );
@@ -475,119 +494,126 @@ function ThreadItem({
 // ─── ForumHub ─────────────────────────────────────────────
 
 export function ForumHub() {
-  const { currentTheme: t, allAgents } = useApp();
-  const [threads, setThreads] = useState<ForumThread[]>(seedThreads);
-  const [selectedThread, setSelectedThread] = useState<ForumThread | null>(null);
+  const { currentTheme: t } = useApp();
+  const { user } = useAuth();
+
+  const [threads, setThreads] = useState<SocialForumThread[]>([]);
+  const [loadingThreads, setLoadingThreads] = useState(true);
+  const [threadsError, setThreadsError] = useState<string | null>(null);
+
+  // When a thread is selected, fetch its detail + replies.
+  const [selectedThread, setSelectedThread] = useState<SocialForumThread | null>(null);
+  const [selectedReplies, setSelectedReplies] = useState<SocialForumReply[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
   const [showNew, setShowNew] = useState(false);
+  const [submittingThread, setSubmittingThread] = useState(false);
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState<ForumTag | null>(null);
 
-  const appendReply = (threadId: string, reply: ForumReply) => {
-    setThreads(prev =>
-      prev.map(th => th.id === threadId ? { ...th, replies: [...th.replies, reply] } : th),
-    );
-    setSelectedThread(prev => prev && prev.id === threadId ? { ...prev, replies: [...prev.replies, reply] } : prev);
+  const isBackendUser = user?.source === 'backend';
+
+  const loadThreads = useCallback(async () => {
+    try {
+      const { threads: fetched } = await backendApi.getForumThreads();
+      setThreads(fetched);
+      setThreadsError(null);
+    } catch (err) {
+      setThreadsError(
+        err instanceof Error ? err.message : 'Could not load forum threads.',
+      );
+    } finally {
+      setLoadingThreads(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadThreads();
+  }, [loadThreads]);
+
+  const handleSelectThread = async (thread: SocialForumThread) => {
+    setSelectedThread(thread);
+    setLoadingDetail(true);
+    try {
+      const { thread: detail, replies } = await backendApi.getForumThread(thread.thread_id);
+      setSelectedThread(detail);
+      setSelectedReplies(replies);
+    } catch {
+      // If detail fails, show what we have with empty replies.
+      setSelectedReplies([]);
+    } finally {
+      setLoadingDetail(false);
+    }
   };
 
-  const triggerAgentReply = (threadId: string, tags: ForumTag[], threadTitle: string, contextText: string) => {
-    const agent = pickRespondingAgent(tags, allAgents);
-    if (!agent) return;
+  const handleBack = () => {
+    setSelectedThread(null);
+    setSelectedReplies([]);
+    // Refresh the thread list (reply counts may have changed).
+    void loadThreads();
+  };
 
-    setTimeout(() => {
-      void (async () => {
-        const content = await generateForumAgentReply(agent, threadTitle, contextText);
-        const reply: ForumReply = {
-          id: `r-agent-${Date.now()}`,
-          threadId,
-          author: agentForumAuthor(agent.id),
-          content,
-          timestamp: new Date().toISOString(),
-          likes: 0,
-        };
-        appendReply(threadId, reply);
-      })();
-    }, 900 + Math.random() * 900);
+  const handleNewThread = async (title: string, body: string, tags: ForumTag[]) => {
+    if (!isBackendUser) return;
+    setSubmittingThread(true);
+    try {
+      const { thread } = await backendApi.createForumThread(title, body, tags);
+      setShowNew(false);
+      setThreads(prev => [thread, ...prev]);
+      // Open the new thread immediately.
+      setSelectedThread(thread);
+      setSelectedReplies([]);
+    } catch (err) {
+      // Surface the error through the modal's submitting state — the modal
+      // stays open so the user can see something went wrong (the button will
+      // re-enable once submittingThread is false).
+    } finally {
+      setSubmittingThread(false);
+    }
+  };
+
+  const handleAddReply = async (threadId: string, content: string): Promise<SocialForumReply> => {
+    const { reply } = await backendApi.createForumReply(threadId, content);
+    // Update the reply count in the thread list so it's correct when the user backs out.
+    setThreads(prev =>
+      prev.map(th =>
+        th.thread_id === threadId
+          ? { ...th, reply_count: th.reply_count + 1 }
+          : th,
+      ),
+    );
+    return reply;
   };
 
   const filteredThreads = threads
     .filter(th =>
       (search === '' || th.title.toLowerCase().includes(search.toLowerCase())) &&
       (filterTag === null || th.tags.includes(filterTag)),
-    )
-    .sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-    });
-
-  const handleNewThread = (title: string, body: string, tags: ForumTag[]) => {
-    const newThread: ForumThread = {
-      id: `thread-${Date.now()}`,
-      title,
-      body,
-      author: ME_AUTHOR,
-      tags,
-      timestamp: new Date().toISOString(),
-      views: 0,
-      likes: 0,
-      replies: [],
-    };
-    setThreads(prev => [newThread, ...prev]);
-    setShowNew(false);
-    setSelectedThread(newThread);
-    triggerAgentReply(newThread.id, tags, title, body);
-  };
-
-  const handleLikeReply = (threadId: string, replyId: string) => {
-    setThreads(prev =>
-      prev.map(th =>
-        th.id !== threadId
-          ? th
-          : { ...th, replies: th.replies.map(r => r.id === replyId ? { ...r, likes: r.likes + 1 } : r) },
-      ),
     );
-    if (selectedThread?.id === threadId) {
-      setSelectedThread(prev =>
-        prev
-          ? { ...prev, replies: prev.replies.map(r => r.id === replyId ? { ...r, likes: r.likes + 1 } : r) }
-          : prev,
-      );
-    }
-  };
-
-  const handleAddReply = (threadId: string, content: string) => {
-    const reply: ForumReply = {
-      id: `r-${Date.now()}`,
-      threadId,
-      author: ME_AUTHOR,
-      content,
-      timestamp: new Date().toISOString(),
-      likes: 0,
-    };
-    appendReply(threadId, reply);
-
-    const thread = threads.find(th => th.id === threadId);
-    if (thread) {
-      triggerAgentReply(threadId, thread.tags, thread.title, content);
-    }
-  };
-
-  const handleSelectThread = (thread: ForumThread) => {
-    setThreads(prev => prev.map(th => th.id === thread.id ? { ...th, views: th.views + 1 } : th));
-    setSelectedThread({ ...thread, views: thread.views + 1 });
-  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: t.bg }}>
       <AnimatePresence mode="wait">
         {selectedThread ? (
-          <ThreadDetail
-            key="detail"
-            thread={selectedThread}
-            onBack={() => setSelectedThread(null)}
-            onLikeReply={handleLikeReply}
-            onAddReply={handleAddReply}
-          />
+          loadingDetail ? (
+            <motion.div
+              key="detail-loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center justify-center flex-1 h-full"
+            >
+              <Loader2 size={20} style={{ color: t.textMuted }} className="animate-spin" />
+            </motion.div>
+          ) : (
+            <ThreadDetail
+              key={selectedThread.thread_id}
+              thread={selectedThread}
+              initialReplies={selectedReplies}
+              onBack={handleBack}
+              onAddReply={handleAddReply}
+              canReply={isBackendUser}
+            />
+          )
         ) : (
           <motion.div
             key="list"
@@ -621,16 +647,18 @@ export function ForumHub() {
                   </button>
                 )}
               </div>
-              <motion.button
-                onClick={() => setShowNew(true)}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
-                style={{ background: t.accent, color: t.bg }}
-              >
-                <Plus size={12} />
-                New
-              </motion.button>
+              {isBackendUser && (
+                <motion.button
+                  onClick={() => setShowNew(true)}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: t.accent, color: t.bg }}
+                >
+                  <Plus size={12} />
+                  New
+                </motion.button>
+              )}
             </div>
 
             {/* Tag filter strip */}
@@ -673,17 +701,67 @@ export function ForumHub() {
 
             {/* Thread list */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {filteredThreads.length === 0 ? (
+              {loadingThreads ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 size={20} style={{ color: t.textMuted }} className="animate-spin" />
+                </div>
+              ) : threadsError ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-2">
+                  <AlertCircle size={24} style={{ color: t.textMuted, opacity: 0.4 }} />
+                  <p className="text-xs text-center" style={{ color: t.textMuted }}>
+                    {threadsError}
+                  </p>
+                  <motion.button
+                    onClick={() => { setLoadingThreads(true); void loadThreads(); }}
+                    whileHover={{ scale: 1.05 }}
+                    className="text-xs px-3 py-1.5 rounded-lg mt-1"
+                    style={{ background: t.surface2, color: t.textMuted, border: `1px solid ${t.border}` }}
+                  >
+                    Retry
+                  </motion.button>
+                </div>
+              ) : filteredThreads.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40">
                   <MessageSquare size={28} style={{ color: t.textMuted, opacity: 0.3 }} />
-                  <p className="text-xs mt-2" style={{ color: t.textMuted }}>No threads found</p>
+                  <p className="text-xs mt-2" style={{ color: t.textMuted }}>
+                    {threads.length === 0
+                      ? 'No threads yet. Be the first to post!'
+                      : 'No threads match your search.'}
+                  </p>
+                  {threads.length === 0 && isBackendUser && (
+                    <motion.button
+                      onClick={() => setShowNew(true)}
+                      whileHover={{ scale: 1.05 }}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg mt-3"
+                      style={{ background: t.accent, color: t.bg }}
+                    >
+                      <Plus size={12} />
+                      Start a thread
+                    </motion.button>
+                  )}
                 </div>
               ) : (
                 filteredThreads.map(thread => (
-                  <ThreadItem key={thread.id} thread={thread} onClick={() => handleSelectThread(thread)} />
+                  <ThreadItem
+                    key={thread.thread_id}
+                    thread={thread}
+                    onClick={() => void handleSelectThread(thread)}
+                  />
                 ))
               )}
             </div>
+
+            {/* Sign-in nudge for local users */}
+            {!isBackendUser && threads.length > 0 && (
+              <div
+                className="px-4 py-2 flex-shrink-0 text-center"
+                style={{ borderTop: `1px solid ${t.border}` }}
+              >
+                <p className="text-[10px]" style={{ color: t.textMuted }}>
+                  Sign in to a real account to post threads and replies.
+                </p>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -693,7 +771,8 @@ export function ForumHub() {
         {showNew && (
           <NewThreadModal
             onClose={() => setShowNew(false)}
-            onSubmit={handleNewThread}
+            onSubmit={(title, body, tags) => void handleNewThread(title, body, tags)}
+            submitting={submittingThread}
           />
         )}
       </AnimatePresence>

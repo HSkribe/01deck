@@ -1,12 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Send, Plus, X, Search } from 'lucide-react';
+import { Mail, Send, Plus, X, Search, Loader2, AlertCircle, Bot } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
-import { getActiveApiKey, generateAgentCompletion } from '../../../services/llmClient';
+import { useAuth } from '../../../context/AuthContext';
 import {
-  Conversation, DirectMessage, DMUser,
-  DM_ME, ALL_DM_USERS, seedConversations,
-} from '../../../data/messagesData';
+  backendApi,
+  type AccountPresence,
+  type SocialDirectConversation,
+  type SocialDirectMessage,
+} from '../../../services/backendApi';
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -22,23 +24,57 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── New Conversation Picker ──────────────────────────────
+function avatarUrl(username: string) {
+  return `https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(username)}`;
+}
+
+// ─── New Conversation Modal ───────────────────────────────
 
 function NewConvoModal({
-  existing,
   onClose,
-  onSelect,
+  onStart,
 }: {
-  existing: Conversation[];
   onClose: () => void;
-  onSelect: (user: DMUser) => void;
+  onStart: (accountId: string, displayName: string) => void;
 }) {
   const { currentTheme: t } = useApp();
+  const { user } = useAuth();
   const [q, setQ] = useState('');
-  const existingIds = new Set(existing.map(c => c.participant.id));
-  const available = ALL_DM_USERS.filter(
-    u => !existingIds.has(u.id) && u.name.toLowerCase().includes(q.toLowerCase()),
+  const [online, setOnline] = useState<AccountPresence[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { online: users } = await backendApi.getOnlinePresence();
+        setOnline(users.filter(u => u.account_id !== user?.id));
+      } catch {
+        // If presence is unreachable, show empty list with a note rather than crash.
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user?.id]);
+
+  const filtered = online.filter(
+    u =>
+      u.display_name.toLowerCase().includes(q.toLowerCase()) ||
+      u.username.toLowerCase().includes(q.toLowerCase()),
   );
+
+  const handleSelect = async (account: AccountPresence) => {
+    setStarting(account.account_id);
+    setError(null);
+    try {
+      await backendApi.startConversation(account.account_id);
+      onStart(account.account_id, account.display_name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start conversation.');
+      setStarting(null);
+    }
+  };
 
   return (
     <motion.div
@@ -62,8 +98,14 @@ function NewConvoModal({
           className="flex items-center justify-between px-4 py-3"
           style={{ borderBottom: `1px solid ${t.border}`, background: t.surface2 }}
         >
-          <span className="text-sm font-medium" style={{ color: t.text }}>New Message</span>
-          <motion.button onClick={onClose} whileHover={{ scale: 1.1 }} style={{ color: t.textMuted }}>
+          <span className="text-sm font-medium" style={{ color: t.text }}>
+            New Message
+          </span>
+          <motion.button
+            onClick={onClose}
+            whileHover={{ scale: 1.1 }}
+            style={{ color: t.textMuted }}
+          >
             <X size={14} />
           </motion.button>
         </div>
@@ -76,7 +118,7 @@ function NewConvoModal({
             <Search size={12} style={{ color: t.textMuted }} />
             <input
               type="text"
-              placeholder="Search users…"
+              placeholder="Search online users…"
               value={q}
               onChange={e => setQ(e.target.value)}
               autoFocus
@@ -85,14 +127,29 @@ function NewConvoModal({
             />
           </div>
 
+          {error && (
+            <p className="text-xs text-center" style={{ color: '#ef4444' }}>
+              {error}
+            </p>
+          )}
+
           <div className="space-y-1 max-h-52 overflow-y-auto">
-            {available.length === 0 ? (
-              <p className="text-xs text-center py-4" style={{ color: t.textMuted }}>No users found</p>
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 size={16} style={{ color: t.textMuted }} className="animate-spin" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: t.textMuted }}>
+                {online.length === 0
+                  ? 'No other users are online right now.'
+                  : 'No users match your search.'}
+              </p>
             ) : (
-              available.map(user => (
+              filtered.map(account => (
                 <motion.button
-                  key={user.id}
-                  onClick={() => onSelect(user)}
+                  key={account.account_id}
+                  onClick={() => void handleSelect(account)}
+                  disabled={starting === account.account_id}
                   whileHover={{ x: 2 }}
                   whileTap={{ scale: 0.98 }}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg"
@@ -100,20 +157,36 @@ function NewConvoModal({
                 >
                   <div className="relative flex-shrink-0">
                     <img
-                      src={user.avatar}
-                      alt={user.name}
+                      src={avatarUrl(account.username)}
+                      alt={account.display_name}
                       className="w-8 h-8 rounded-full"
                       style={{ border: `1.5px solid ${t.border}` }}
                     />
                     <div
                       className="absolute bottom-0 right-0 w-2 h-2 rounded-full border"
-                      style={{ background: user.online ? '#22c55e' : '#6b7280', borderColor: t.surface1 }}
+                      style={{ background: '#22c55e', borderColor: t.surface1 }}
                     />
+                    {account.is_system_account && (
+                      <div
+                        className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+                        style={{ background: '#6384ff', border: `1px solid ${t.surface1}` }}
+                      >
+                        <Bot size={8} style={{ color: '#fff' }} />
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1 text-left">
-                    <div className="text-xs font-medium" style={{ color: t.text }}>{user.name}</div>
-                    <div className="text-[10px]" style={{ color: t.textMuted }}>Lv.{user.level}</div>
+                    <div className="text-xs font-medium" style={{ color: t.text }}>
+                      {account.display_name}
+                    </div>
+                    <div className="text-[10px]" style={{ color: t.textMuted }}>
+                      @{account.username}
+                      {account.is_system_account ? ' · System' : ''}
+                    </div>
                   </div>
+                  {starting === account.account_id && (
+                    <Loader2 size={12} style={{ color: t.textMuted }} className="animate-spin" />
+                  )}
                 </motion.button>
               ))
             )}
@@ -131,12 +204,11 @@ function ConvoItem({
   active,
   onClick,
 }: {
-  convo: Conversation;
+  convo: SocialDirectConversation;
   active: boolean;
   onClick: () => void;
 }) {
   const { currentTheme: t } = useApp();
-  const lastMsg = convo.messages[convo.messages.length - 1];
   return (
     <motion.button
       onClick={onClick}
@@ -150,49 +222,52 @@ function ConvoItem({
     >
       <div className="relative flex-shrink-0">
         <img
-          src={convo.participant.avatar}
-          alt={convo.participant.name}
+          src={avatarUrl(convo.other_participant.username)}
+          alt={convo.other_participant.display_name}
           className="w-9 h-9 rounded-full"
           style={{ border: `1.5px solid ${active ? t.accent : t.border}` }}
         />
-        <div
-          className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border"
-          style={{
-            background: convo.participant.online ? '#22c55e' : '#6b7280',
-            borderColor: t.surface1,
-          }}
-        />
+        {convo.other_participant.is_system_account && (
+          <div
+            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+            style={{ background: '#6384ff', border: `1px solid ${t.surface1}` }}
+          >
+            <Bot size={8} style={{ color: '#fff' }} />
+          </div>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium" style={{ color: t.text }}>{convo.participant.name}</span>
-          {lastMsg && (
-            <span className="text-[9px]" style={{ color: t.textMuted }}>{timeAgo(lastMsg.timestamp)}</span>
-          )}
+          <span className="text-xs font-medium" style={{ color: t.text }}>
+            {convo.other_participant.display_name}
+          </span>
+          <span className="text-[9px]" style={{ color: t.textMuted }}>
+            {timeAgo(convo.last_message_at)}
+          </span>
         </div>
-        {lastMsg && (
+        {convo.last_message_preview && (
           <p className="text-[11px] truncate mt-0.5" style={{ color: t.textMuted }}>
-            {lastMsg.senderId === 'me' ? 'You: ' : ''}{lastMsg.content}
+            {convo.last_message_preview}
           </p>
         )}
       </div>
-      {convo.unread > 0 && (
-        <span
-          className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px]"
-          style={{ background: t.accent, color: t.bg }}
-        >
-          {convo.unread}
-        </span>
-      )}
     </motion.button>
   );
 }
 
 // ─── Message Bubble ───────────────────────────────────────
 
-function Bubble({ msg, participant }: { msg: DirectMessage; participant: DMUser }) {
+function Bubble({
+  msg,
+  currentUserId,
+  otherParticipant,
+}: {
+  msg: SocialDirectMessage;
+  currentUserId: string;
+  otherParticipant: AccountPresence;
+}) {
   const { currentTheme: t } = useApp();
-  const isMe = msg.senderId === 'me';
+  const isMe = msg.sender.account_id === currentUserId;
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -201,8 +276,8 @@ function Bubble({ msg, participant }: { msg: DirectMessage; participant: DMUser 
     >
       {!isMe && (
         <img
-          src={participant.avatar}
-          alt={participant.name}
+          src={avatarUrl(otherParticipant.username)}
+          alt={otherParticipant.display_name}
           className="w-6 h-6 rounded-full flex-shrink-0 mt-1"
           style={{ border: `1.5px solid ${t.border}` }}
         />
@@ -219,34 +294,93 @@ function Bubble({ msg, participant }: { msg: DirectMessage; participant: DMUser 
           {msg.content}
         </div>
         <span className="text-[9px] mt-0.5 px-1" style={{ color: t.textMuted }}>
-          {formatTime(msg.timestamp)}
+          {formatTime(msg.created_at)}
         </span>
       </div>
     </motion.div>
   );
 }
 
-// ─── Conversation Detail ─────────────────────────────────
+// ─── Conversation Detail ──────────────────────────────────
 
 function ConvoDetail({
   convo,
-  onSend,
+  currentUserId,
 }: {
-  convo: Conversation;
-  onSend: (convoId: string, text: string) => void;
+  convo: SocialDirectConversation;
+  currentUserId: string;
 }) {
   const { currentTheme: t } = useApp();
+  const [messages, setMessages] = useState<SocialDirectMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const maxMessageIdRef = useRef<number>(0);
+  const convoIdRef = useRef(convo.conversation_id);
+  convoIdRef.current = convo.conversation_id;
+
+  const loadMessages = useCallback(async (convId: string, initial: boolean) => {
+    try {
+      const afterId = initial ? undefined : (maxMessageIdRef.current > 0 ? maxMessageIdRef.current : undefined);
+      const { messages: fetched } = await backendApi.getDirectMessages(convId, afterId);
+      if (initial) {
+        setMessages(fetched);
+        setError(null);
+      } else if (fetched.length > 0) {
+        setMessages(prev => [...prev, ...fetched]);
+      }
+      if (fetched.length > 0) {
+        const maxId = Math.max(...fetched.map(m => m.message_id));
+        if (maxId > maxMessageIdRef.current) maxMessageIdRef.current = maxId;
+      }
+    } catch (err) {
+      if (initial) {
+        setError(err instanceof Error ? err.message : 'Could not load messages.');
+      }
+    } finally {
+      if (initial) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    setMessages([]);
+    maxMessageIdRef.current = 0;
+    void loadMessages(convo.conversation_id, true);
+
+    const id = setInterval(() => {
+      if (convoIdRef.current === convo.conversation_id) {
+        void loadMessages(convo.conversation_id, false);
+      }
+    }, 4_000);
+
+    return () => clearInterval(id);
+  }, [convo.conversation_id, loadMessages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [convo.messages.length, convo.id]);
+  }, [messages.length, convo.conversation_id]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    onSend(convo.id, input.trim());
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setSending(true);
     setInput('');
+    try {
+      const { message } = await backendApi.sendDirectMessage(convo.conversation_id, text);
+      setMessages(prev => [...prev, message]);
+      if (message.message_id > maxMessageIdRef.current) {
+        maxMessageIdRef.current = message.message_id;
+      }
+    } catch (err) {
+      setInput(text);
+      setError(err instanceof Error ? err.message : 'Failed to send message.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -258,29 +392,62 @@ function ConvoDetail({
       >
         <div className="relative">
           <img
-            src={convo.participant.avatar}
-            alt={convo.participant.name}
+            src={avatarUrl(convo.other_participant.username)}
+            alt={convo.other_participant.display_name}
             className="w-8 h-8 rounded-full"
             style={{ border: `1.5px solid ${t.border}` }}
           />
-          <div
-            className="absolute bottom-0 right-0 w-2 h-2 rounded-full border"
-            style={{ background: convo.participant.online ? '#22c55e' : '#6b7280', borderColor: t.surface1 }}
-          />
+          {convo.other_participant.is_system_account && (
+            <div
+              className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+              style={{ background: '#6384ff', border: `1px solid ${t.surface1}` }}
+            >
+              <Bot size={8} style={{ color: '#fff' }} />
+            </div>
+          )}
         </div>
         <div>
-          <div className="text-sm font-medium" style={{ color: t.text }}>{convo.participant.name}</div>
-          <div className="text-[10px]" style={{ color: convo.participant.online ? '#22c55e' : t.textMuted }}>
-            {convo.participant.online ? 'Online' : 'Offline'}
+          <div className="text-sm font-medium" style={{ color: t.text }}>
+            {convo.other_participant.display_name}
           </div>
+          {convo.other_participant.is_system_account && (
+            <div className="text-[10px]" style={{ color: '#6384ff' }}>
+              System account
+            </div>
+          )}
         </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {convo.messages.map(msg => (
-          <Bubble key={msg.id} msg={msg} participant={convo.participant} />
-        ))}
+        {loading ? (
+          <div className="flex items-center justify-center h-32">
+            <Loader2 size={16} style={{ color: t.textMuted }} className="animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center h-32 gap-2">
+            <AlertCircle size={18} style={{ color: t.textMuted, opacity: 0.5 }} />
+            <p className="text-xs text-center" style={{ color: t.textMuted }}>
+              {error}
+            </p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32">
+            <Mail size={20} style={{ color: t.textMuted, opacity: 0.2 }} />
+            <p className="text-xs mt-2" style={{ color: t.textMuted }}>
+              No messages yet. Say hello!
+            </p>
+          </div>
+        ) : (
+          messages.map(msg => (
+            <Bubble
+              key={msg.message_id}
+              msg={msg}
+              currentUserId={currentUserId}
+              otherParticipant={convo.other_participant}
+            />
+          ))
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -295,18 +462,24 @@ function ConvoDetail({
         >
           <input
             type="text"
-            placeholder={`Message ${convo.participant.name}…`}
+            placeholder={`Message ${convo.other_participant.display_name}…`}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void handleSend();
+              }
+            }}
+            disabled={sending}
             className="flex-1 bg-transparent outline-none text-xs"
             style={{ color: t.text }}
           />
         </div>
         <motion.button
-          onClick={handleSend}
-          disabled={!input.trim()}
-          whileHover={{ scale: input.trim() ? 1.05 : 1 }}
+          onClick={() => void handleSend()}
+          disabled={!input.trim() || sending}
+          whileHover={{ scale: input.trim() && !sending ? 1.05 : 1 }}
           whileTap={{ scale: 0.95 }}
           className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{
@@ -315,7 +488,11 @@ function ConvoDetail({
             opacity: input.trim() ? 1 : 0.5,
           }}
         >
-          <Send size={13} />
+          {sending ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Send size={13} />
+          )}
         </motion.button>
       </div>
     </div>
@@ -326,96 +503,82 @@ function ConvoDetail({
 
 export function MessagesHub() {
   const { currentTheme: t } = useApp();
-  const [conversations, setConversations] = useState<Conversation[]>(seedConversations);
-  const [activeConvoId, setActiveConvoId] = useState<string | null>(conversations[0]?.id ?? null);
+  const { user } = useAuth();
+
+  const [conversations, setConversations] = useState<SocialDirectConversation[]>([]);
+  const [activeConvoId, setActiveConvoId] = useState<string | null>(null);
+  const [loadingConvos, setLoadingConvos] = useState(true);
+  const [convosError, setConvosError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
 
-  const activeConvo = conversations.find(c => c.id === activeConvoId) ?? null;
-  const totalUnread = conversations.reduce((sum, c) => sum + c.unread, 0);
+  const isBackendUser = user?.source === 'backend';
 
-  const handleSelectConvo = (convo: Conversation) => {
-    setActiveConvoId(convo.id);
-    setConversations(prev => prev.map(c => c.id === convo.id ? { ...c, unread: 0 } : c));
+  const fetchConversations = useCallback(async () => {
+    if (!isBackendUser) return;
+    try {
+      const { conversations: convos } = await backendApi.getConversations();
+      setConversations(convos);
+      setConvosError(null);
+    } catch (err) {
+      setConvosError(
+        err instanceof Error ? err.message : 'Could not load conversations.',
+      );
+    } finally {
+      setLoadingConvos(false);
+    }
+  }, [isBackendUser]);
+
+  useEffect(() => {
+    if (!isBackendUser) {
+      setLoadingConvos(false);
+      return;
+    }
+    void fetchConversations();
+  }, [fetchConversations, isBackendUser]);
+
+  const activeConvo =
+    conversations.find(c => c.conversation_id === activeConvoId) ?? null;
+  const totalUnread = 0; // Unread counts are not in the DirectConversation schema
+
+  const handleSelectConvo = (convo: SocialDirectConversation) => {
+    setActiveConvoId(convo.conversation_id);
   };
 
-  const handleSend = (convoId: string, text: string) => {
-    const msg: DirectMessage = {
-      id: `dm-${Date.now()}`,
-      conversationId: convoId,
-      senderId: 'me',
-      content: text,
-      timestamp: new Date().toISOString(),
-      read: true,
-    };
-    
-    const targetConvo = conversations.find(c => c.id === convoId);
-    
-    setConversations(prev =>
-      prev.map(c => c.id === convoId ? { ...c, messages: [...c.messages, msg] } : c),
-    );
-
-    if (!targetConvo) return;
-    const participant = targetConvo.participant;
-
-    setTimeout(() => {
-      void (async () => {
-        let replyText = '';
-        const activeKey = getActiveApiKey();
-
-        if (activeKey) {
-          try {
-            replyText = await generateAgentCompletion({
-              provider: activeKey.provider,
-              apiKey: activeKey.key,
-              systemPrompt: `You are ${participant.name}, an AI agent on 01Deck (${participant.role || 'Agent'}). You are in a direct 1-on-1 private text message with a user. Respond authentically as yourself in 1 to 3 natural sentences.`,
-              messages: [
-                ...targetConvo.messages.map(m => ({
-                  role: m.senderId === 'me' ? ('user' as const) : ('assistant' as const),
-                  content: m.content,
-                })),
-                { role: 'user', content: text },
-              ],
-            });
-          } catch (e) {
-            replyText = `Hey! Received: "${text}". (${e instanceof Error ? e.message : 'Live response fallback'})`;
-          }
-        } else {
-          const defaults = [
-            `Hey! Thanks for messaging. Processing your note regarding "${text}".`,
-            `Got your message! I'm operating under 01 Protocol parameters. Let's sync soon.`,
-            `Direct message received. Working on your request!`,
-            `Hi there! As ${participant.name}, I'm online and ready to collaborate.`,
-          ];
-          replyText = defaults[Math.floor(Math.random() * defaults.length)];
-        }
-
-        const replyMsg: DirectMessage = {
-          id: `dm-reply-${Date.now()}`,
-          conversationId: convoId,
-          senderId: participant.id,
-          content: replyText,
-          timestamp: new Date().toISOString(),
-          read: true,
-        };
-
-        setConversations(prev =>
-          prev.map(c => c.id === convoId ? { ...c, messages: [...c.messages, replyMsg] } : c),
-        );
-      })();
-    }, 600 + Math.random() * 400);
-  };
-
-  const handleNewConvo = (user: DMUser) => {
-    const newConvo: Conversation = {
-      id: `conv-${Date.now()}`,
-      participant: user,
-      messages: [],
-      unread: 0,
-    };
-    setConversations(prev => [newConvo, ...prev]);
-    setActiveConvoId(newConvo.id);
+  // After the modal calls startConversation successfully, refresh the list
+  // and auto-select the conversation with the target account.
+  const handleNewConvoStartedV2 = async (accountId: string) => {
     setShowNew(false);
+    if (!isBackendUser) return;
+    try {
+      const { conversations: fresh } = await backendApi.getConversations();
+      setConversations(fresh);
+      // The conversation with this account will be in the list; find it.
+      const target = fresh.find(
+        c => c.other_participant.account_id === accountId,
+      );
+      if (target) setActiveConvoId(target.conversation_id);
+      else if (fresh.length > 0) setActiveConvoId(fresh[0].conversation_id);
+    } catch {
+      // Ignore — user can click the conversation in the list.
+    }
   };
+
+  if (!isBackendUser) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center h-full gap-3"
+        style={{ background: t.bg }}
+      >
+        <Mail size={32} style={{ color: t.textMuted, opacity: 0.25 }} />
+        <p className="text-sm font-medium" style={{ color: t.text }}>
+          Direct messages
+        </p>
+        <p className="text-xs text-center max-w-xs" style={{ color: t.textMuted }}>
+          Sign in to a real account to send and receive direct messages.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full overflow-hidden" style={{ background: t.bg }}>
@@ -432,7 +595,9 @@ export function MessagesHub() {
         >
           <div className="flex items-center gap-1.5">
             <Mail size={12} style={{ color: t.accent }} />
-            <span className="text-xs font-medium" style={{ color: t.text }}>Messages</span>
+            <span className="text-xs font-medium" style={{ color: t.text }}>
+              Messages
+            </span>
             {totalUnread > 0 && (
               <span
                 className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full"
@@ -456,7 +621,18 @@ export function MessagesHub() {
 
         {/* List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {conversations.length === 0 ? (
+          {loadingConvos ? (
+            <div className="flex justify-center py-8">
+              <Loader2 size={16} style={{ color: t.textMuted }} className="animate-spin" />
+            </div>
+          ) : convosError ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2 px-3">
+              <AlertCircle size={16} style={{ color: t.textMuted, opacity: 0.5 }} />
+              <p className="text-[10px] text-center" style={{ color: t.textMuted }}>
+                {convosError}
+              </p>
+            </div>
+          ) : conversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32">
               <Mail size={20} style={{ color: t.textMuted, opacity: 0.3 }} />
               <p className="text-[10px] mt-2 text-center" style={{ color: t.textMuted }}>
@@ -466,9 +642,9 @@ export function MessagesHub() {
           ) : (
             conversations.map(convo => (
               <ConvoItem
-                key={convo.id}
+                key={convo.conversation_id}
                 convo={convo}
-                active={convo.id === activeConvoId}
+                active={convo.conversation_id === activeConvoId}
                 onClick={() => handleSelectConvo(convo)}
               />
             ))
@@ -481,14 +657,17 @@ export function MessagesHub() {
         <AnimatePresence mode="wait">
           {activeConvo ? (
             <motion.div
-              key={activeConvo.id}
+              key={activeConvo.conversation_id}
               initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.18 }}
               className="flex flex-col h-full"
             >
-              <ConvoDetail convo={activeConvo} onSend={handleSend} />
+              <ConvoDetail
+                convo={activeConvo}
+                currentUserId={user?.id ?? ''}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -520,9 +699,8 @@ export function MessagesHub() {
       <AnimatePresence>
         {showNew && (
           <NewConvoModal
-            existing={conversations}
             onClose={() => setShowNew(false)}
-            onSelect={handleNewConvo}
+            onStart={(accountId, _displayName) => void handleNewConvoStartedV2(accountId)}
           />
         )}
       </AnimatePresence>

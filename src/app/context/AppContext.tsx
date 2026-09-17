@@ -904,6 +904,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void syncBackendSession();
   }, [syncBackendSession]);
 
+  // Presence heartbeat — keeps the signed-in backend account visible in the
+  // online roster while a browser tab is open. Only fires for real backend
+  // accounts; local/offline accounts have no presence record server-side.
+  useEffect(() => {
+    if (user?.source !== 'backend') return;
+    void backendApi.heartbeat().catch(() => {});
+    const id = setInterval(() => {
+      void backendApi.heartbeat().catch(() => {});
+    }, 25_000);
+    return () => clearInterval(id);
+  }, [user?.source, user?.id]);
+
   const authenticateBackend = useCallback(async (token: string) => {
     try {
       const status = await backendApi.createSession(token.trim());
