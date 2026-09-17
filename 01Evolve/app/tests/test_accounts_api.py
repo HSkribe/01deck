@@ -1,6 +1,42 @@
 from __future__ import annotations
 
 
+def test_signup_login_me_work_without_beta_token_even_when_one_is_configured(client, monkeypatch):
+    # Regression test for the real production incident this guards against:
+    # accounts are meant to be their own access-control mechanism, not
+    # gated behind the separate pre-launch beta secret. A visitor with no
+    # beta credential at all must still be able to sign up, log in, and
+    # view their own account -- even when a real BETA_ACCESS_TOKEN is
+    # configured server-side (which makes require_api_access reject
+    # everything by default, since dev-mode-open no longer applies once a
+    # token exists).
+    monkeypatch.setenv("BETA_ACCESS_TOKEN", "some-real-beta-secret-the-client-never-sends")
+
+    signup_resp = client.post(
+        "/account/signup",
+        json={"username": "nobetauser", "display_name": "No Beta", "password": "Passw0rd!"},
+    )
+    assert signup_resp.status_code == 200, signup_resp.text
+
+    me_resp = client.get("/account/me")
+    assert me_resp.status_code == 200
+
+    xp_resp = client.post("/account/xp", json={"amount": 10})
+    assert xp_resp.status_code == 200
+
+    logout_resp = client.delete("/account/session")
+    assert logout_resp.status_code == 200
+
+    login_resp = client.post("/account/login", json={"username": "nobetauser", "password": "Passw0rd!"})
+    assert login_resp.status_code == 200
+
+    # The beta gate must still apply to endpoints other than /account/* --
+    # this isn't a blanket removal of access control, just a scoped one.
+    chat_resp = client.post("/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]})
+    assert chat_resp.status_code == 401
+    assert chat_resp.json()["detail"] == "authentication required"
+
+
 def test_signup_login_me_logout_flow(client):
     signup_resp = client.post(
         "/account/signup",

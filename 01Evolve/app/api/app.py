@@ -257,7 +257,12 @@ def _current_account_id(request: Request) -> str | None:
 
 @api.post("/account/signup")
 def account_signup(payload: AccountSignupRequest, request: Request, response: Response):
-    require_api_access(request)
+    # Deliberately not behind require_api_access (the pre-launch beta
+    # token) -- that gate was designed for "invite-only testers before
+    # public launch," a different model than "anyone can create a real
+    # account." Real accounts are now their own access-control mechanism
+    # (password auth, rate limiting below); the beta token still gates
+    # other things (chat proxy, agent creation, Bosun) as before.
     enforce_rate_limit(request, "account-signup", limit=10, window_seconds=300)
     try:
         account = services().accounts.signup(
@@ -272,7 +277,7 @@ def account_signup(payload: AccountSignupRequest, request: Request, response: Re
 
 @api.post("/account/login")
 def account_login(payload: AccountLoginRequest, request: Request, response: Response):
-    require_api_access(request)
+    # See account_signup's comment -- not behind the beta token by design.
     enforce_rate_limit(request, "account-login", limit=20, window_seconds=60)
     # Per-username, IP-independent: stops credential stuffing spread across
     # many addresses, which the per-IP limit above and the old client-side
@@ -298,7 +303,8 @@ def account_logout(request: Request, response: Response):
 
 @api.get("/account/me")
 def account_me(request: Request):
-    require_api_access(request)
+    # Not behind the beta token -- see account_signup's comment. A valid
+    # account session is its own proof of access here.
     account_id = _current_account_id(request)
     if not account_id:
         raise HTTPException(status_code=401, detail="not signed in")
@@ -310,7 +316,7 @@ def account_me(request: Request):
 
 @api.post("/account/xp")
 def account_award_xp(payload: AccountXpAwardRequest, request: Request):
-    require_api_access(request)
+    # Not behind the beta token -- see account_signup's comment.
     enforce_rate_limit(request, "account-xp", limit=60, window_seconds=60)
     account_id = _current_account_id(request)
     if not account_id:
