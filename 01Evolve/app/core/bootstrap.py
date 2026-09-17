@@ -12,6 +12,7 @@ from app.core.lifecycle.service import LifecycleService
 from app.core.persistence.database import init_db
 from app.core.persistence.repository import Repository
 from app.core.plugins.service import PluginService
+from app.core.social.service import SocialService
 
 
 @dataclass(slots=True)
@@ -24,6 +25,7 @@ class ServiceContainer:
     evolution: EvolutionService
     support: SupportOptimizationService
     accounts: AccountService
+    social: SocialService
 
 
 def build_services(db_url: str | None = None, plugin_config_path: str | Path | None = None) -> ServiceContainer:
@@ -40,6 +42,10 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
     )
     support = SupportOptimizationService(repository, agent_service=agents)
     accounts = AccountService(repository)
+    social = SocialService(repository)
+    # Ensure Bosun's system account and presence row exist on every boot.
+    # This is idempotent — safe to call on every startup including tests.
+    repository.ensure_bosun_account()
     return ServiceContainer(
         repository=repository,
         lifecycle=lifecycle,
@@ -49,4 +55,5 @@ def build_services(db_url: str | None = None, plugin_config_path: str | Path | N
         evolution=evolution,
         support=support,
         accounts=accounts,
+        social=social,
     )

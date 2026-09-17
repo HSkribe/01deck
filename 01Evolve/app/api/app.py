@@ -31,6 +31,7 @@ from app.api.security import (
 )
 from app.core.accounts.service import AccountError
 from app.core.bootstrap import build_services
+from app.core.social.service import SocialError
 from app.core.llm.adapters import OpenAICompatibleAdapter
 from app.core.lineage.service import LineageService
 from app.core.schemas.models import AgentCreate, SupportAdapterMode, SupportSelectionStrategy
@@ -105,8 +106,15 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     if (
         request.url.path.startswith("/auth/")
-        or request.url.path.startswith("/chat/")
         or request.url.path.startswith("/account/")
+        # /chat/completions is the AI proxy — per-user, has real dollar cost.
+        # /chat/global is a public read endpoint and must NOT get no-store
+        # (doing so would prevent any caching at the CDN layer for public data).
+        or request.url.path == "/chat/completions"
+        # Per-user social surfaces: DMs and conversations must never be served
+        # from a shared cache — they contain private message content.
+        or request.url.path.startswith("/messages/")
+        or request.url.path == "/presence/heartbeat"
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -217,6 +225,31 @@ class ChatProxyRequest(BaseModel):
 class ChatProxyResponse(BaseModel):
     text: str
     model: str
+
+
+# Social layer request models
+
+class GlobalChatPostRequest(BaseModel):
+    channel: str = Field(default="general", min_length=1, max_length=64)
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class StartConversationRequest(BaseModel):
+    other_account_id: str = Field(min_length=1, max_length=64)
+
+
+class SendDirectMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class CreateForumThreadRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+    body: str = Field(min_length=1, max_length=32000)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+
+
+class CreateForumReplyRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
 
 
 @api.get("/auth/session")
@@ -557,3 +590,233 @@ def get_support_benchmark_report(run_id: str, request: Request):
     if not report:
         raise HTTPException(status_code=404, detail="support benchmark report not found")
     return report
+
+
+# ---------------------------------------------------------------------------
+# Social layer — Presence
+# ---------------------------------------------------------------------------
+
+
+@api.post("/presence/heartbeat")
+def presence_heartbeat(request: Request):
+    """Mark the signed-in account as online right now.
+
+    Called frequently by an open browser tab (e.g. every 15-30 s). Rate
+    limit is generous — a normal poll interval should never hit it — but
+    stops a runaway client from hammering the DB.
+    """
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    # 120/60 = 2 heartbeats per second worst-case sustained; far more
+    # than any real client needs, blocks abuse without ever blocking normal use.
+    enforce_rate_limit(request, "presence-heartbeat", limit=120, window_seconds=60)
+    enforce_global_rate_limit(f"presence-heartbeat-account:{account_id}", limit=60, window_seconds=60)
+    services().social.heartbeat(account_id)
+    return {"ok": True}
+
+
+@api.get("/presence/online")
+def presence_online(request: Request):
+    """Return all accounts active in the last 2 minutes, plus Bosun always.
+
+    No auth required — this is the public 'who's here' roster — but rate-limited
+    against scraping.
+    """
+    enforce_rate_limit(request, "presence-online", limit=60, window_seconds=60)
+    return {"online": services().social.get_online()}
+
+
+# ---------------------------------------------------------------------------
+# Social layer — Global chat
+# ---------------------------------------------------------------------------
+
+
+@api.post("/chat/global")
+def global_chat_post(payload: GlobalChatPostRequest, request: Request):
+    """Post a message to a global channel. Account-gated, rate-limited per account and IP."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "global-chat-post", limit=60, window_seconds=60)
+    enforce_global_rate_limit(f"global-chat-account:{account_id}", limit=20, window_seconds=60)
+    try:
+        message = services().social.post_global_message(
+            sender_account_id=account_id,
+            channel=payload.channel,
+            content=payload.content,
+        )
+    except SocialError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"message": message}
+
+
+@api.get("/chat/global")
+def global_chat_read(
+    request: Request,
+    channel: str = "general",
+    after_id: int | None = None,
+    limit: int = 100,
+):
+    """Fetch messages in a global channel, oldest-first, with optional cursor."""
+    enforce_rate_limit(request, "global-chat-read", limit=120, window_seconds=60)
+    messages = services().social.get_global_messages(
+        channel=channel, after_id=after_id, limit=limit
+    )
+    return {"messages": messages}
+
+
+# ---------------------------------------------------------------------------
+# Social layer — Direct messages
+# ---------------------------------------------------------------------------
+
+
+@api.post("/messages/start")
+def messages_start(payload: StartConversationRequest, request: Request):
+    """Find or create the 1:1 conversation with another account."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "messages-start", limit=30, window_seconds=60)
+    try:
+        conversation_id = services().social.start_conversation(
+            caller_account_id=account_id,
+            other_account_id=payload.other_account_id,
+        )
+    except SocialError as exc:
+        # 400 for self-DM, 404 for unknown account
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"conversation_id": conversation_id}
+
+
+@api.get("/messages/conversations")
+def messages_list_conversations(request: Request):
+    """List the signed-in account's conversations with participant info and last message preview."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "messages-conversations", limit=60, window_seconds=60)
+    convs = services().social.list_conversations(account_id)
+    return {"conversations": convs}
+
+
+@api.post("/messages/{conversation_id}/send")
+def messages_send(conversation_id: str, payload: SendDirectMessageRequest, request: Request):
+    """Send a message to an existing conversation. 403 if not a participant."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "messages-send", limit=60, window_seconds=60)
+    enforce_global_rate_limit(f"messages-send-account:{account_id}", limit=60, window_seconds=60)
+    try:
+        message = services().social.send_direct_message(
+            caller_account_id=account_id,
+            conversation_id=conversation_id,
+            content=payload.content,
+        )
+    except SocialError as exc:
+        if "Not a participant" in str(exc):
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"message": message}
+
+
+@api.get("/messages/{conversation_id}")
+def messages_get(
+    conversation_id: str,
+    request: Request,
+    after_id: int | None = None,
+    limit: int = 100,
+):
+    """Fetch messages in a conversation. Account-gated, 403 if not a participant."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "messages-get", limit=120, window_seconds=60)
+    try:
+        messages = services().social.get_direct_messages(
+            caller_account_id=account_id,
+            conversation_id=conversation_id,
+            after_id=after_id,
+            limit=limit,
+        )
+    except SocialError as exc:
+        if "Not a participant" in str(exc):
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"messages": messages}
+
+
+# ---------------------------------------------------------------------------
+# Social layer — Forum
+# ---------------------------------------------------------------------------
+
+
+@api.post("/forum/threads")
+def forum_create_thread(payload: CreateForumThreadRequest, request: Request):
+    """Create a new forum thread. Account-gated, rate-limited per account."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "forum-create-thread", limit=20, window_seconds=60)
+    enforce_global_rate_limit(f"forum-thread-account:{account_id}", limit=10, window_seconds=60)
+    try:
+        thread = services().social.create_thread(
+            author_account_id=account_id,
+            title=payload.title,
+            body=payload.body,
+            tags=payload.tags,
+        )
+    except SocialError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"thread": thread}
+
+
+@api.get("/forum/threads")
+def forum_list_threads(
+    request: Request,
+    before_id: str | None = None,
+    limit: int = 20,
+):
+    """List forum threads newest-first with author info and reply count. Public, paginated."""
+    enforce_rate_limit(request, "forum-list-threads", limit=120, window_seconds=60)
+    threads = services().social.list_threads(before_id=before_id, limit=limit)
+    return {"threads": threads}
+
+
+@api.get("/forum/threads/{thread_id}")
+def forum_get_thread(thread_id: str, request: Request):
+    """Thread detail with all replies oldest-first, author info on each. Public."""
+    enforce_rate_limit(request, "forum-get-thread", limit=120, window_seconds=60)
+    try:
+        thread, replies = services().social.get_thread_with_replies(thread_id)
+    except SocialError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"thread": thread, "replies": replies}
+
+
+@api.post("/forum/threads/{thread_id}/replies")
+def forum_create_reply(thread_id: str, payload: CreateForumReplyRequest, request: Request):
+    """Post a reply to a forum thread. Account-gated, 404 if thread doesn't exist."""
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    enforce_rate_limit(request, "forum-create-reply", limit=30, window_seconds=60)
+    enforce_global_rate_limit(f"forum-reply-account:{account_id}", limit=20, window_seconds=60)
+    try:
+        reply = services().social.create_reply(
+            author_account_id=account_id,
+            thread_id=thread_id,
+            content=payload.content,
+        )
+    except SocialError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"reply": reply}

@@ -40,6 +40,11 @@ Don't edit or remove other agents' entries — if something's fixed, a human wil
 **What happened:** chat is strictly one human ↔ one agent. There's no group thread where a human could bring two or more of their agents into the same conversation together, or where two agents could converse with each other while a human observes/steers.
 **Why it matters:** relevant to any workflow where a human wants their agents to collaborate in front of them rather than being coordinated one at a time through separate 1:1 threads.
 
+### 2026-09-17 — Social backend now exists; frontend screens still on mock data
+**Affects:** both
+**What happened:** Built the complete backend for Forum, Messages, and Presence (the three screens that were 100% mock data). New endpoints: `POST/GET /chat/global` (global channel chat), `POST /messages/start`, `GET /messages/conversations`, `POST/GET /messages/{id}` (1:1 DMs), `POST/GET /forum/threads`, `GET /forum/threads/{id}`, `POST /forum/threads/{id}/replies`, `POST /presence/heartbeat`, `GET /presence/online`. Bosun gets a seeded system account (`account_id = "bosun"`, `is_system_account = true`) that always appears in the online roster. New `is_system_account` boolean on `UserAccountRecord` so the frontend can render platform agents differently. Branch: `feat/social-backend`.
+**Why it matters:** The frontend `ForumHub.tsx`, `MessagesHub.tsx`, `ChatHub.tsx` components are wired to `useState(seedXxx)` and make zero backend calls — this backend exists but is not yet connected. Frontend wiring is the immediate next task; once done, two real human accounts will actually be able to see each other and communicate.
+
 ---
 
 *Started 2026-09-07 during the security/QA remediation pass. See the forensic report and workflow map from that pass for the broader defect list — this file is specifically for "the product is missing something" observations, not bug reports.*

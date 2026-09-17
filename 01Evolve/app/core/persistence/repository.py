@@ -3,20 +3,29 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from sqlalchemy import delete, desc, select
+import secrets
+from datetime import timedelta
+
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.persistence.models import (
     AgentRecord,
     BaselineProfileRecord,
     ConfigRecord,
+    DirectConversationRecord,
+    DirectMessageRecord,
     EvaluationRunRecord,
     EvaluationSuiteRecord,
+    ForumReplyRecord,
+    ForumThreadRecord,
     GenomeRecord,
+    GlobalChatMessageRecord,
     LifecycleEventRecord,
     LineageLinkRecord,
     MatingEventRecord,
     PluginReportRecord,
+    PresenceHeartbeatRecord,
     SupportBaselineRecordModel,
     SupportBenchmarkRunRecord,
     SupportCaseResultRecord,
@@ -27,11 +36,17 @@ from app.core.persistence.models import (
     utc_now,
 )
 from app.core.schemas.models import (
+    AccountPresence,
     AccountPublic,
     AgentRead,
     BaselineProfile,
+    DirectConversation,
+    DirectMessage,
     EvaluationRunRead,
     EvaluationSuiteConfig,
+    ForumReply,
+    ForumThread,
+    GlobalChatMessage,
     LifecycleEventRead,
     PluginReportRead,
     SupportBaselineRecord,
@@ -627,8 +642,18 @@ class Repository:
             display_name=record.display_name,
             xp=record.xp,
             level=record.level,
+            is_system_account=record.is_system_account,
             created_at=record.created_at,
             last_login_at=record.last_login_at,
+        )
+
+    def _presence_from_account(self, record: UserAccountRecord) -> AccountPresence:
+        """Minimal public identity for social surfaces — no XP/level/timestamps."""
+        return AccountPresence(
+            account_id=record.account_id,
+            username=record.username,
+            display_name=record.display_name,
+            is_system_account=record.is_system_account,
         )
 
     def get_account_record_by_username(self, username: str) -> UserAccountRecord | None:
@@ -647,6 +672,7 @@ class Repository:
         password_salt: str,
         password_iterations: int,
         email: str | None = None,
+        is_system_account: bool = False,
     ) -> AccountPublic:
         """Raises sqlalchemy.exc.IntegrityError on a concurrent duplicate username/email/account_id."""
         record = UserAccountRecord(
@@ -657,6 +683,7 @@ class Repository:
             password_hash=password_hash,
             password_salt=password_salt,
             password_iterations=password_iterations,
+            is_system_account=is_system_account,
         )
         self.session.add(record)
         self.session.commit()
@@ -712,3 +739,466 @@ class Repository:
             )
             for item in evaluations
         ]
+
+    # ------------------------------------------------------------------
+    # Presence
+    # ------------------------------------------------------------------
+
+    def upsert_presence_heartbeat(self, account_id: str) -> None:
+        """Mark account_id as online right now (upsert last_seen_at)."""
+        existing = self.session.scalar(
+            select(PresenceHeartbeatRecord).where(PresenceHeartbeatRecord.account_id == account_id)
+        )
+        if existing:
+            existing.last_seen_at = utc_now()
+        else:
+            self.session.add(PresenceHeartbeatRecord(account_id=account_id, last_seen_at=utc_now()))
+        self.session.commit()
+
+    def get_online_accounts(self, window_seconds: int = 120) -> list[AccountPresence]:
+        """Return accounts seen within window_seconds, plus Bosun who is always present.
+
+        The BOSUN_ACCOUNT_ID constant is used to exclude Bosun from the
+        recency filter so he appears online unconditionally — he's a backend
+        service, not something that heartbeats.
+        """
+        cutoff = utc_now() - timedelta(seconds=window_seconds)
+        # Join heartbeats to accounts for username/display_name; include
+        # Bosun's row regardless of last_seen_at.
+        rows = self.session.scalars(
+            select(PresenceHeartbeatRecord).where(
+                or_(
+                    PresenceHeartbeatRecord.account_id == BOSUN_ACCOUNT_ID,
+                    PresenceHeartbeatRecord.last_seen_at >= cutoff,
+                )
+            )
+        ).all()
+        result: list[AccountPresence] = []
+        for row in rows:
+            account = self.session.scalar(
+                select(UserAccountRecord).where(UserAccountRecord.account_id == row.account_id)
+            )
+            if account:
+                result.append(self._presence_from_account(account))
+        return result
+
+    # ------------------------------------------------------------------
+    # Global chat
+    # ------------------------------------------------------------------
+
+    def post_global_message(self, channel: str, sender_account_id: str, content: str) -> GlobalChatMessage:
+        """Persist a global chat message and return it with sender info resolved.
+
+        The record's auto-increment `id` is used directly as the message_id
+        exposed to clients — no separate column needed.
+        """
+        record = GlobalChatMessageRecord(
+            channel=channel,
+            sender_account_id=sender_account_id,
+            content=content,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        sender = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == sender_account_id)
+        )
+        return GlobalChatMessage(
+            message_id=record.id,
+            channel=record.channel,
+            sender=self._presence_from_account(sender) if sender else AccountPresence(
+                account_id=sender_account_id, username=sender_account_id, display_name=sender_account_id
+            ),
+            content=record.content,
+            created_at=record.created_at,
+        )
+
+    def get_global_messages(
+        self,
+        channel: str = "general",
+        after_id: int | None = None,
+        limit: int = 100,
+    ) -> list[GlobalChatMessage]:
+        """Return up to `limit` messages in `channel` oldest-first.
+        Pass `after_id` for cursor-based polling (only messages with id > after_id).
+        The record's `id` is the message_id exposed to clients.
+        """
+        query = select(GlobalChatMessageRecord).where(GlobalChatMessageRecord.channel == channel)
+        if after_id is not None:
+            query = query.where(GlobalChatMessageRecord.id > after_id)
+        query = query.order_by(GlobalChatMessageRecord.id).limit(limit)
+        rows = self.session.scalars(query).all()
+        # Batch-fetch senders to avoid N+1
+        sender_ids = {row.sender_account_id for row in rows}
+        senders: dict[str, UserAccountRecord] = {}
+        for sid in sender_ids:
+            record = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == sid))
+            if record:
+                senders[sid] = record
+        return [
+            GlobalChatMessage(
+                message_id=row.id,
+                channel=row.channel,
+                sender=self._presence_from_account(senders[row.sender_account_id])
+                if row.sender_account_id in senders
+                else AccountPresence(
+                    account_id=row.sender_account_id,
+                    username=row.sender_account_id,
+                    display_name=row.sender_account_id,
+                ),
+                content=row.content,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Direct messages
+    # ------------------------------------------------------------------
+
+    def find_or_create_direct_conversation(
+        self, account_a: str, account_b: str
+    ) -> DirectConversationRecord:
+        """Return the existing conversation between account_a and account_b,
+        creating it if necessary. The two IDs are stored in lexicographic order
+        so the lookup is deterministic regardless of who initiates.
+        """
+        a, b = sorted([account_a, account_b])
+        existing = self.session.scalar(
+            select(DirectConversationRecord).where(
+                DirectConversationRecord.account_a_id == a,
+                DirectConversationRecord.account_b_id == b,
+            )
+        )
+        if existing:
+            return existing
+        conversation_id = secrets.token_hex(16)
+        record = DirectConversationRecord(
+            conversation_id=conversation_id,
+            account_a_id=a,
+            account_b_id=b,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return record
+
+    def get_direct_conversation(self, conversation_id: str) -> DirectConversationRecord | None:
+        return self.session.scalar(
+            select(DirectConversationRecord).where(
+                DirectConversationRecord.conversation_id == conversation_id
+            )
+        )
+
+    def list_direct_conversations(self, account_id: str) -> list[DirectConversation]:
+        """Return the caller's conversations, most-recently-active first,
+        with other-participant info and last message preview resolved.
+        """
+        rows = self.session.scalars(
+            select(DirectConversationRecord)
+            .where(
+                or_(
+                    DirectConversationRecord.account_a_id == account_id,
+                    DirectConversationRecord.account_b_id == account_id,
+                )
+            )
+            .order_by(desc(DirectConversationRecord.last_message_at))
+        ).all()
+        result: list[DirectConversation] = []
+        for row in rows:
+            other_id = row.account_b_id if row.account_a_id == account_id else row.account_a_id
+            other_record = self.session.scalar(
+                select(UserAccountRecord).where(UserAccountRecord.account_id == other_id)
+            )
+            # Fetch last message for preview
+            last_msg = self.session.scalar(
+                select(DirectMessageRecord)
+                .where(DirectMessageRecord.conversation_id == row.conversation_id)
+                .order_by(desc(DirectMessageRecord.id))
+            )
+            result.append(
+                DirectConversation(
+                    conversation_id=row.conversation_id,
+                    other_participant=self._presence_from_account(other_record)
+                    if other_record
+                    else AccountPresence(account_id=other_id, username=other_id, display_name=other_id),
+                    last_message_at=row.last_message_at,
+                    last_message_preview=last_msg.content[:128] if last_msg else None,
+                )
+            )
+        return result
+
+    def send_direct_message(
+        self, conversation_id: str, sender_account_id: str, content: str
+    ) -> DirectMessage:
+        """Persist a DM and bump the conversation's last_message_at."""
+        record = DirectMessageRecord(
+            conversation_id=conversation_id,
+            sender_account_id=sender_account_id,
+            content=content,
+        )
+        self.session.add(record)
+        self.session.flush()
+        # Bump last_message_at on the conversation for ordering
+        conv = self.session.scalar(
+            select(DirectConversationRecord).where(
+                DirectConversationRecord.conversation_id == conversation_id
+            )
+        )
+        if conv:
+            conv.last_message_at = utc_now()
+        self.session.commit()
+        self.session.refresh(record)
+        sender = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == sender_account_id)
+        )
+        return DirectMessage(
+            message_id=record.id,
+            conversation_id=record.conversation_id,
+            sender=self._presence_from_account(sender) if sender else AccountPresence(
+                account_id=sender_account_id, username=sender_account_id, display_name=sender_account_id
+            ),
+            content=record.content,
+            created_at=record.created_at,
+        )
+
+    def get_direct_messages(
+        self,
+        conversation_id: str,
+        after_id: int | None = None,
+        limit: int = 100,
+    ) -> list[DirectMessage]:
+        """Return up to `limit` DMs in the conversation, oldest-first.
+        Pass `after_id` for cursor-based polling.
+        """
+        query = select(DirectMessageRecord).where(DirectMessageRecord.conversation_id == conversation_id)
+        if after_id is not None:
+            query = query.where(DirectMessageRecord.id > after_id)
+        query = query.order_by(DirectMessageRecord.id).limit(limit)
+        rows = self.session.scalars(query).all()
+        sender_ids = {row.sender_account_id for row in rows}
+        senders: dict[str, UserAccountRecord] = {}
+        for sid in sender_ids:
+            rec = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == sid))
+            if rec:
+                senders[sid] = rec
+        return [
+            DirectMessage(
+                message_id=row.id,
+                conversation_id=row.conversation_id,
+                sender=self._presence_from_account(senders[row.sender_account_id])
+                if row.sender_account_id in senders
+                else AccountPresence(
+                    account_id=row.sender_account_id,
+                    username=row.sender_account_id,
+                    display_name=row.sender_account_id,
+                ),
+                content=row.content,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Forum
+    # ------------------------------------------------------------------
+
+    def create_forum_thread(
+        self, author_account_id: str, title: str, body: str, tags: list[str]
+    ) -> ForumThread:
+        thread_id = secrets.token_hex(16)
+        record = ForumThreadRecord(
+            thread_id=thread_id,
+            author_account_id=author_account_id,
+            title=title,
+            body=body,
+            tags_json=json.dumps(tags),
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        author = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == author_account_id)
+        )
+        return ForumThread(
+            thread_id=record.thread_id,
+            author=self._presence_from_account(author) if author else AccountPresence(
+                account_id=author_account_id, username=author_account_id, display_name=author_account_id
+            ),
+            title=record.title,
+            body=record.body,
+            tags=json.loads(record.tags_json),
+            reply_count=0,
+            created_at=record.created_at,
+        )
+
+    def list_forum_threads(
+        self, before_id: str | None = None, limit: int = 20
+    ) -> list[ForumThread]:
+        """List threads newest-first with author info and reply count. before_id is the
+        thread_id of the last item from the previous page (exclusive lower bound by
+        insertion order via the integer PK)."""
+        query = select(ForumThreadRecord)
+        if before_id is not None:
+            pivot = self.session.scalar(
+                select(ForumThreadRecord).where(ForumThreadRecord.thread_id == before_id)
+            )
+            if pivot:
+                query = query.where(ForumThreadRecord.id < pivot.id)
+        query = query.order_by(desc(ForumThreadRecord.id)).limit(limit)
+        rows = self.session.scalars(query).all()
+        author_ids = {row.author_account_id for row in rows}
+        authors: dict[str, UserAccountRecord] = {}
+        for aid in author_ids:
+            rec = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == aid))
+            if rec:
+                authors[aid] = rec
+        result: list[ForumThread] = []
+        for row in rows:
+            reply_count = self.session.scalar(
+                select(func.count()).where(ForumReplyRecord.thread_id == row.thread_id)
+            ) or 0
+            author_rec = authors.get(row.author_account_id)
+            result.append(
+                ForumThread(
+                    thread_id=row.thread_id,
+                    author=self._presence_from_account(author_rec) if author_rec else AccountPresence(
+                        account_id=row.author_account_id,
+                        username=row.author_account_id,
+                        display_name=row.author_account_id,
+                    ),
+                    title=row.title,
+                    body=row.body,
+                    tags=json.loads(row.tags_json),
+                    reply_count=reply_count,
+                    created_at=row.created_at,
+                )
+            )
+        return result
+
+    def get_forum_thread(self, thread_id: str) -> ForumThreadRecord | None:
+        return self.session.scalar(
+            select(ForumThreadRecord).where(ForumThreadRecord.thread_id == thread_id)
+        )
+
+    def get_forum_thread_with_replies(self, thread_id: str) -> tuple[ForumThread, list[ForumReply]] | None:
+        """Return (thread, replies) or None if thread not found."""
+        row = self.get_forum_thread(thread_id)
+        if not row:
+            return None
+        author = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == row.author_account_id)
+        )
+        reply_rows = self.session.scalars(
+            select(ForumReplyRecord)
+            .where(ForumReplyRecord.thread_id == thread_id)
+            .order_by(ForumReplyRecord.id)
+        ).all()
+        # Batch-fetch reply authors
+        reply_author_ids = {r.author_account_id for r in reply_rows}
+        reply_authors: dict[str, UserAccountRecord] = {}
+        for aid in reply_author_ids:
+            rec = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == aid))
+            if rec:
+                reply_authors[aid] = rec
+        thread = ForumThread(
+            thread_id=row.thread_id,
+            author=self._presence_from_account(author) if author else AccountPresence(
+                account_id=row.author_account_id, username=row.author_account_id, display_name=row.author_account_id
+            ),
+            title=row.title,
+            body=row.body,
+            tags=json.loads(row.tags_json),
+            reply_count=len(reply_rows),
+            created_at=row.created_at,
+        )
+        replies = [
+            ForumReply(
+                reply_id=r.reply_id,
+                thread_id=r.thread_id,
+                author=self._presence_from_account(reply_authors[r.author_account_id])
+                if r.author_account_id in reply_authors
+                else AccountPresence(
+                    account_id=r.author_account_id,
+                    username=r.author_account_id,
+                    display_name=r.author_account_id,
+                ),
+                content=r.content,
+                created_at=r.created_at,
+            )
+            for r in reply_rows
+        ]
+        return thread, replies
+
+    def create_forum_reply(
+        self, thread_id: str, author_account_id: str, content: str
+    ) -> ForumReply:
+        reply_id = secrets.token_hex(16)
+        record = ForumReplyRecord(
+            reply_id=reply_id,
+            thread_id=thread_id,
+            author_account_id=author_account_id,
+            content=content,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        author = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == author_account_id)
+        )
+        return ForumReply(
+            reply_id=record.reply_id,
+            thread_id=record.thread_id,
+            author=self._presence_from_account(author) if author else AccountPresence(
+                account_id=author_account_id, username=author_account_id, display_name=author_account_id
+            ),
+            content=record.content,
+            created_at=record.created_at,
+        )
+
+    # ------------------------------------------------------------------
+    # Bosun system account bootstrap
+    # ------------------------------------------------------------------
+
+    def ensure_bosun_account(self) -> None:
+        """Idempotently create Bosun's system account row if it doesn't exist.
+
+        Called from build_services() on every app boot. Bosun never logs in
+        via password; the hash is a placeholder that can never match any real
+        password string (bcrypt prefix, non-hex content, unreachable length).
+        """
+        existing = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == BOSUN_ACCOUNT_ID)
+        )
+        if existing:
+            return
+        self.session.add(
+            UserAccountRecord(
+                account_id=BOSUN_ACCOUNT_ID,
+                username="bosun",
+                display_name="Bosun",
+                email=None,
+                # Intentionally unusable placeholder — Bosun authenticates via
+                # backend service logic, never via this hash.
+                password_hash="SYSTEM_ACCOUNT_NO_PASSWORD",
+                password_salt="00" * 16,
+                password_iterations=1,
+                is_system_account=True,
+            )
+        )
+        # Seed Bosun's presence row so he always shows up in /presence/online
+        # without needing a heartbeat. The upsert will never delete this row.
+        self.session.add(
+            PresenceHeartbeatRecord(
+                account_id=BOSUN_ACCOUNT_ID,
+                last_seen_at=utc_now(),
+            )
+        )
+        self.session.commit()
+
+
+# Well-known fixed account_id for Bosun. Used both in ensure_bosun_account()
+# and in get_online_accounts() to exclude him from the recency filter.
+# Defined at module level so both methods reference the same constant without
+# circular dependency risk.
+BOSUN_ACCOUNT_ID = "bosun"
