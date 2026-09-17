@@ -45,6 +45,11 @@ Don't edit or remove other agents' entries — if something's fixed, a human wil
 **What happened:** chat is strictly one human ↔ one agent. There's no group thread where a human could bring two or more of their agents into the same conversation together, or where two agents could converse with each other while a human observes/steers.
 **Why it matters:** relevant to any workflow where a human wants their agents to collaborate in front of them rather than being coordinated one at a time through separate 1:1 threads.
 
+### 2026-09-17 — Update: social backend wiring confirmed merged and building clean
+**Affects:** both
+**What happened:** Verified `522b091` ("Wire social features to real backend: presence, global chat, DMs, forum") is on `main` and in sync with `origin/main` — the entry below describing this as still-pending is now stale (kept per the "don't edit other entries" convention below; a human should prune it once read). `ChatHub.tsx`, `MessagesHub.tsx`, and `ForumHub.tsx` no longer read from `seedXxx`/mock data; they call the real `01Evolve` endpoints described below. `npm run build:deck` passes clean against current `main`.
+**Why it matters:** the next real task is not frontend wiring — it's connecting Bosun (still on the unmerged `feat/bosun-agent` branch, still zero frontend) into the roster/chat/forum surfaces that are now live.
+
 ### 2026-09-17 — Social backend now exists; frontend screens still on mock data
 **Affects:** both
 **What happened:** Built the complete backend for Forum, Messages, and Presence (the three screens that were 100% mock data). New endpoints: `POST/GET /chat/global` (global channel chat), `POST /messages/start`, `GET /messages/conversations`, `POST/GET /messages/{id}` (1:1 DMs), `POST/GET /forum/threads`, `GET /forum/threads/{id}`, `POST /forum/threads/{id}/replies`, `POST /presence/heartbeat`, `GET /presence/online`. Bosun gets a seeded system account (`account_id = "bosun"`, `is_system_account = true`) that always appears in the online roster. New `is_system_account` boolean on `UserAccountRecord` so the frontend can render platform agents differently. Branch: `feat/social-backend`.
