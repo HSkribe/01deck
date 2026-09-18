@@ -16,11 +16,16 @@ function profileStepSeenKey(userId: string) {
 }
 
 function AppRoot() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, isVerifyingSession, user } = useAuth();
   // Re-read per signed-in user id, not just once at mount — switching
   // accounts in the same browser (or a guest session) must not skip a user
   // who hasn't seen this step yet just because a previous one had.
   const [seenForUserId, setSeenForUserId] = useState<string | null>(null);
+
+  // Wait for the real session-cookie check before deciding anything — a
+  // cached-but-expired session must never flash HumanProfileStep or App
+  // before falling back to AuthModal (see AuthContext's isVerifyingSession).
+  if (isVerifyingSession) return null;
 
   if (!isAuthenticated || !user) return <AuthModal />;
 

@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { backendApi, BackendUnreachableError, type BackendAccount, type AgeRange } from '../services/backendApi';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { backendApi, BackendUnreachableError, BackendHttpError, type BackendAccount, type AgeRange } from '../services/backendApi';
 
 export interface User {
   id: string;
@@ -56,6 +56,12 @@ interface StoredUserRecord extends User {
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  // True only while the initial session-validity check (see AuthProvider's
+  // mount effect) is in flight for a cached 'backend' user. Callers that
+  // gate on isAuthenticated (main.tsx's AppRoot) should wait for this to go
+  // false before deciding what to render, so a stale cached session isn't
+  // briefly treated as live.
+  isVerifyingSession: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (username: string, displayName: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -317,6 +323,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return existing;
   });
 
+  // A cached 'backend' user in localStorage only proves "this browser signed
+  // in at some point" — it says nothing about whether the httpOnly session
+  // cookie the server actually checks is still valid. Cookies expire, get
+  // cleared, or (as happened here) stop matching after a backend redeploy;
+  // without this check, isAuthenticated reports true from stale local state
+  // while every real API call 401s server-side. Only a confirmed 401 clears
+  // the session — a network hiccup or 5xx should not sign someone out.
+  const [isVerifyingSession, setIsVerifyingSession] = useState(() => readSession()?.source === 'backend');
+
+  useEffect(() => {
+    if (user?.source !== 'backend') {
+      setIsVerifyingSession(false);
+      return;
+    }
+    let cancelled = false;
+    backendApi.getAccount()
+      .then(account => {
+        if (cancelled) return;
+        setUser(accountToUser(account));
+      })
+      .catch(err => {
+        if (cancelled) return;
+        if (err instanceof BackendHttpError && err.status === 401) {
+          writeSession(null);
+          setUser(null);
+        }
+        // Any other failure (network unreachable, 5xx): keep the cached
+        // session — don't punish the user for a transient connectivity blip.
+      })
+      .finally(() => {
+        if (!cancelled) setIsVerifyingSession(false);
+      });
+    return () => { cancelled = true; };
+    // Only re-run when the signed-in identity actually changes, not on every
+    // user update (e.g. awardXP/updateProfile writes) — otherwise every XP
+    // award would re-trigger a verification round-trip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.source]);
+
   const login = useCallback(async (
     username: string,
     password: string,
@@ -550,7 +595,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, login, signup, logout, awardXP, updateProfile }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isVerifyingSession, login, signup, logout, awardXP, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

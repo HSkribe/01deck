@@ -5,6 +5,20 @@ type BackendFetchOptions = {
   body?: unknown;
 };
 
+/** Thrown by backendFetch on any non-ok HTTP response. Carries the real
+ * status code so callers can tell "session expired" (401) apart from other
+ * failures without brittle message-string matching — see
+ * AuthContext's session-verification-on-load, which only treats a 401 as
+ * "actually signed out", not a 5xx/network hiccup. */
+export class BackendHttpError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'BackendHttpError';
+    this.status = status;
+  }
+}
+
 async function backendFetch<T>(path: string, options: BackendFetchOptions = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? 'GET',
@@ -24,7 +38,7 @@ async function backendFetch<T>(path: string, options: BackendFetchOptions = {}):
     } catch {
       // not JSON — fall through and use the raw text as-is
     }
-    throw new Error(message || `HTTP ${response.status}`);
+    throw new BackendHttpError(message || `HTTP ${response.status}`, response.status);
   }
 
   return (await response.json()) as T;
