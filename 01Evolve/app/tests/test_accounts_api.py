@@ -118,3 +118,46 @@ def test_xp_award_requires_session_and_updates_level(client):
     assert awarded.status_code == 200
     assert awarded.json()["account"]["xp"] == 750
     assert awarded.json()["account"]["level"] == 2
+
+
+def test_profile_update_requires_session(client):
+    resp = client.post("/account/profile", json={"age_range": "25_34"})
+    assert resp.status_code == 401
+
+
+def test_profile_update_happy_path_and_independence(client):
+    client.post(
+        "/account/signup",
+        json={"username": "profileuser", "display_name": "Profile User", "password": "Passw0rd!"},
+    )
+
+    age_only = client.post("/account/profile", json={"age_range": "25_34"})
+    assert age_only.status_code == 200
+    assert age_only.json()["account"]["age_range"] == "25_34"
+    assert age_only.json()["account"]["avatar_data_url"] is None
+
+    # Setting the avatar afterward doesn't clobber the previously-set age_range.
+    avatar_only = client.post(
+        "/account/profile", json={"avatar_data_url": "data:image/png;base64,AAAA"}
+    )
+    assert avatar_only.status_code == 200
+    assert avatar_only.json()["account"]["age_range"] == "25_34"
+    assert avatar_only.json()["account"]["avatar_data_url"] == "data:image/png;base64,AAAA"
+
+
+def test_profile_update_rejects_invalid_age_range(client):
+    client.post(
+        "/account/signup",
+        json={"username": "badageuser", "display_name": "Bad Age", "password": "Passw0rd!"},
+    )
+    resp = client.post("/account/profile", json={"age_range": "not_real"})
+    assert resp.status_code == 400
+
+
+def test_profile_update_rejects_non_image_data_url(client):
+    client.post(
+        "/account/signup",
+        json={"username": "badavataruser", "display_name": "Bad Avatar", "password": "Passw0rd!"},
+    )
+    resp = client.post("/account/profile", json={"avatar_data_url": "not a data url"})
+    assert resp.status_code == 400

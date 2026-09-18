@@ -23,6 +23,11 @@ export interface Agent {
   description: string;
   specialization: string;
   lastUsed: Date;
+  // ISO timestamp set once at creation — drives the procedural avatar's
+  // tenure-based color unlock (see avatarUtils.ts). Optional so existing
+  // seed agents (created before this field existed) fall back to "brand
+  // new" (tenureDays computed as 0) rather than crashing on a missing field.
+  createdAt?: string;
   rarity: Rarity;
   rarityCount: string;
   portrait: string;

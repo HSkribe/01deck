@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { backendApi, BackendUnreachableError, type BackendAccount } from '../services/backendApi';
+import { backendApi, BackendUnreachableError, type BackendAccount, type AgeRange } from '../services/backendApi';
 
 export interface User {
   id: string;
@@ -15,6 +15,12 @@ export interface User {
   // browser-localStorage-only account used when the backend is unreachable
   // (offline / local-first / not deployed yet) — see login()/signup() below.
   source: 'backend' | 'local';
+  // Human-profile-onboarding-step fields — both optional/independent, see
+  // HumanProfileStep.tsx. Undefined until updateProfile() is called at
+  // least once (fresh signups, and every account that existed before this
+  // step was added).
+  ageRange?: AgeRange;
+  avatarDataUrl?: string;
 }
 
 function accountToUser(account: BackendAccount): User {
@@ -26,6 +32,8 @@ function accountToUser(account: BackendAccount): User {
     xp: account.xp,
     level: account.level,
     source: 'backend',
+    ageRange: account.age_range ?? undefined,
+    avatarDataUrl: account.avatar_data_url ?? undefined,
   };
 }
 
@@ -52,6 +60,7 @@ interface AuthContextType {
   signup: (username: string, displayName: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   awardXP: (amount: number) => void;
+  updateProfile: (fields: { ageRange?: AgeRange; avatarDataUrl?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const USERS_KEY = '01deck_users';
@@ -506,8 +515,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateProfile = useCallback(
+    async (fields: { ageRange?: AgeRange; avatarDataUrl?: string }): Promise<{ success: boolean; error?: string }> => {
+      if (!user) return { success: false, error: 'Not signed in' };
+
+      if (user.source === 'backend') {
+        try {
+          const account = await backendApi.updateAccountProfile(fields);
+          setUser(accountToUser(account));
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: err instanceof Error ? err.message : 'Failed to update profile' };
+        }
+      }
+
+      // Local accounts have no server row — persist directly to both the
+      // active session and the users store, same as awardXP's local path.
+      const updated: User = {
+        ...user,
+        ...(fields.ageRange !== undefined ? { ageRange: fields.ageRange } : {}),
+        ...(fields.avatarDataUrl !== undefined ? { avatarDataUrl: fields.avatarDataUrl } : {}),
+      };
+      writeSession(updated);
+      setUser(updated);
+      const users = readUsers();
+      const idx = users.findIndex(u => u.username === updated.username);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], ...updated };
+        writeUsers(users);
+      }
+      return { success: true };
+    },
+    [user],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, login, signup, logout, awardXP }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, login, signup, logout, awardXP, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

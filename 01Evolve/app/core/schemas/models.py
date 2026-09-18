@@ -679,6 +679,8 @@ class AccountPublic(BaseModel):
     is_system_account: bool = False
     created_at: datetime
     last_login_at: datetime | None = None
+    age_range: str | None = None
+    avatar_data_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

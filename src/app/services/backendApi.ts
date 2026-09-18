@@ -58,6 +58,8 @@ export interface BackendChatResponse {
   model: string;
 }
 
+export type AgeRange = 'under_18' | '18_24' | '25_34' | '35_44' | '45_54' | '55_64' | '65_plus';
+
 export interface BackendAccount {
   account_id: string;
   username: string;
@@ -66,6 +68,8 @@ export interface BackendAccount {
   level: number;
   created_at: string;
   last_login_at: string | null;
+  age_range: AgeRange | null;
+  avatar_data_url: string | null;
 }
 
 // ─── Social Layer Types ───────────────────────────────────────────────────────
@@ -223,6 +227,15 @@ export const backendApi = {
     return backendFetch<{ account: BackendAccount }>('/account/xp', {
       method: 'POST',
       body: { amount },
+    }).then(res => res.account);
+  },
+
+  /** Sets the human-profile-step fields. Both independent and optional —
+   * pass only the one(s) you're updating. */
+  updateAccountProfile(fields: { ageRange?: AgeRange; avatarDataUrl?: string }): Promise<BackendAccount> {
+    return backendFetch<{ account: BackendAccount }>('/account/profile', {
+      method: 'POST',
+      body: { age_range: fields.ageRange, avatar_data_url: fields.avatarDataUrl },
     }).then(res => res.account);
   },
 

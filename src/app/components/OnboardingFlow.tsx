@@ -173,6 +173,7 @@ export function OnboardingFlow() {
       description: agentGoal.trim(),
       specialization: '01ai Ecosystem & User Goal Execution',
       lastUsed: new Date(),
+      createdAt: new Date().toISOString(),
       rarity: 'legend',
       rarityCount: '1/1',
       portrait,
@@ -218,6 +219,9 @@ export function OnboardingFlow() {
       seed: avatarSeed,
       style: avatarStyle,
       hueOverride,
+      tenureDays: 0, // brand new — the avatar visibly "ages in" over its first 30 days
+      specialization: '01ai Ecosystem & User Goal Execution',
+      rarityTier: 'legend',
     });
     const agent = buildAgent(portrait);
     setCreatedAgent(agent);
@@ -761,6 +765,9 @@ export function OnboardingFlow() {
                     seed={avatarSeed}
                     style={avatarStyle}
                     hueOverride={hueOverride}
+                    tenureDays={0}
+                    specialization="01ai Ecosystem & User Goal Execution"
+                    rarityTier="legend"
                     width={220}
                     height={308}
                     canvasStyle={{ display: 'block' }}
@@ -829,6 +836,9 @@ export function OnboardingFlow() {
                         seed={candidate.seed}
                         style={candidate.style}
                         hueOverride={hueOverride}
+                        tenureDays={0}
+                        specialization="01ai Ecosystem & User Goal Execution"
+                        rarityTier="legend"
                         width={96}
                         height={132}
                         canvasStyle={{ display: 'block', width: '100%', height: 'auto' }}

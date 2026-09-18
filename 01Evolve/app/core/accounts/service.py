@@ -17,6 +17,16 @@ SALT_BYTES = 16
 
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
+# Buckets, never a raw birthdate -- the human-profile onboarding step (see
+# HumanProfileStep.tsx) only ever collects a range, deliberately less
+# precise than an exact age.
+AGE_RANGE_OPTIONS = ("under_18", "18_24", "25_34", "35_44", "45_54", "55_64", "65_plus")
+
+# ~2.2MB decoded (base64 is ~4/3 larger than binary) -- generous for a
+# client-side-resized profile photo, small enough that this Text() column
+# doesn't become a place to smuggle arbitrarily large blobs.
+MAX_AVATAR_DATA_URL_LENGTH = 3_000_000
+
 
 class AccountError(ValueError):
     """Raised for validation and credential failures; callers map this to an HTTP 400/401."""
@@ -106,3 +116,23 @@ class AccountService:
 
     def award_xp(self, account_id: str, amount: int) -> AccountPublic | None:
         return self.repository.award_account_xp(account_id, amount)
+
+    def update_profile(
+        self, account_id: str, age_range: str | None, avatar_data_url: str | None
+    ) -> AccountPublic:
+        """Sets the human-profile-step fields. Both are optional and settable
+        independently -- passing None for one leaves it untouched, since the
+        avatar step is explicitly skippable while age_range is collected."""
+        if age_range is not None and age_range not in AGE_RANGE_OPTIONS:
+            raise AccountError(f"age_range must be one of {AGE_RANGE_OPTIONS!r}")
+        if avatar_data_url is not None:
+            if not avatar_data_url.startswith("data:image/"):
+                raise AccountError("avatar_data_url must be a data:image/... URI")
+            if len(avatar_data_url) > MAX_AVATAR_DATA_URL_LENGTH:
+                raise AccountError("avatar image is too large")
+        updated = self.repository.update_account_profile(
+            account_id, age_range=age_range, avatar_data_url=avatar_data_url
+        )
+        if not updated:
+            raise AccountError("Account not found")
+        return updated

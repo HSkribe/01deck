@@ -46,7 +46,31 @@ export interface AvatarOptions {
   hueOverride?: number;
   width?: number;
   height?: number;
+  // ── Metrics-driven identity (all optional, all backward compatible —
+  // omitting them reproduces the exact pre-existing look) ──────────────
+  // Days since the agent was created. Under 30, the whole portrait renders
+  // desaturated ("hasn't earned its real color yet"); 30+ unlocks full
+  // color. Not a security/anti-spoof mechanism — purely a cosmetic
+  // milestone, since agents are local-only today (see AppContext.tsx).
+  tenureDays?: number;
+  // Drives a ring of small lit/unlit dots (the "specialty constellation")
+  // independent of the agent's own name/seed-based hue — two agents with
+  // the same specialization show the same lit pattern and color family, so
+  // the pattern reads as "this agent's specialty", not just decoration.
+  specialization?: string;
+  // Adds extra glow rings for higher rarity tiers. Reuses the app's
+  // existing Rarity type/values — no new rarity concept introduced.
+  rarityTier?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legend' | 'mythic';
 }
+
+const RARITY_GLOW_RINGS: Record<NonNullable<AvatarOptions['rarityTier']>, number> = {
+  common: 0,
+  uncommon: 1,
+  rare: 1,
+  epic: 2,
+  legend: 2,
+  mythic: 3,
+};
 
 export function renderAvatarToCanvas(
   canvas: HTMLCanvasElement,
@@ -59,6 +83,9 @@ export function renderAvatarToCanvas(
     hueOverride,
     width = 400,
     height = 560,
+    tenureDays = 0,
+    specialization,
+    rarityTier,
   } = opts;
 
   canvas.width = width;
@@ -242,6 +269,44 @@ export function renderAvatarToCanvas(
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+  }
+
+  // ── 6.5 SPECIALTY CONSTELLATION ──────────────────────────
+  // A ring of small lit/unlit dots hashed from the specialization string,
+  // independent of the agent's own name-based hue — two agents sharing a
+  // specialty show the same lit positions and color family.
+  if (specialization) {
+    const specHash = hashString(specialization);
+    const specHue = specHash % 360;
+    const constellationR = outerR + 26;
+    const dotCount = 16;
+    for (let i = 0; i < dotCount; i++) {
+      const lit = ((specHash >>> i) & 1) === 1;
+      if (!lit) continue;
+      const a = (i / dotCount) * Math.PI * 2;
+      const dx = cx + Math.cos(a) * constellationR;
+      const dy = cy + Math.sin(a) * constellationR;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 2.2, 0, Math.PI * 2);
+      ctx.shadowColor = `hsla(${specHue}, 90%, 60%, 0.8)`;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = `hsla(${specHue}, 85%, 65%, 0.85)`;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // ── 6.6 RARITY GLOW RINGS ─────────────────────────────────
+  // Reuses the app's existing Rarity tiers — higher tiers get more
+  // concentric glow rings around the portrait, no new rarity concept.
+  const glowRings = rarityTier ? RARITY_GLOW_RINGS[rarityTier] : 0;
+  for (let i = 0; i < glowRings; i++) {
+    const ringR = outerR + 34 + i * 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.strokeStyle = `hsla(${hue}, 85%, 70%, ${0.22 - i * 0.05})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   // ── 7. FACE / INNER SPHERE ───────────────────────────────
@@ -436,6 +501,23 @@ export function renderAvatarToCanvas(
   topVig.addColorStop(1, 'transparent');
   ctx.fillStyle = topVig;
   ctx.fillRect(0, 0, W, H);
+
+  // ── 15. TENURE DESATURATION ("hasn't earned its real color yet") ─────
+  // Applied last, over the whole rendered portrait, rather than threading
+  // a saturation multiplier through every individual hsla() call above —
+  // canvas's 'saturation' composite mode blends only the *saturation* of
+  // this fill into the existing pixels, preserving their hue/luminosity,
+  // so it reads as "the same portrait, muted" rather than a grey overlay.
+  const TENURE_UNLOCK_DAYS = 30;
+  if (tenureDays < TENURE_UNLOCK_DAYS) {
+    const progress = Math.max(0, tenureDays) / TENURE_UNLOCK_DAYS; // 0 (brand new) -> 1 (unlocked)
+    const mutedSaturationPct = 6 + progress * 70; // ramps toward full color as the unlock nears
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.fillStyle = `hsl(0, ${mutedSaturationPct}%, 50%)`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
 }
 
 export function generateAvatarDataUrl(opts: AvatarOptions): string {

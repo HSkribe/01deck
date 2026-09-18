@@ -651,6 +651,8 @@ class Repository:
             is_system_account=record.is_system_account,
             created_at=record.created_at,
             last_login_at=record.last_login_at,
+            age_range=record.age_range,
+            avatar_data_url=record.avatar_data_url,
         )
 
     def _presence_from_account(self, record: UserAccountRecord) -> AccountPresence:
@@ -718,6 +720,19 @@ class Repository:
             return None
         record.xp = max(0, record.xp + amount)
         record.level = record.xp // 500 + 1
+        self.session.commit()
+        return self._decode_account(record)
+
+    def update_account_profile(
+        self, account_id: str, age_range: str | None, avatar_data_url: str | None
+    ) -> AccountPublic | None:
+        record = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == account_id))
+        if not record:
+            return None
+        if age_range is not None:
+            record.age_range = age_range
+        if avatar_data_url is not None:
+            record.avatar_data_url = avatar_data_url
         self.session.commit()
         return self._decode_account(record)
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { renderAvatarToCanvas, AvatarStyle } from '../utils/avatarUtils';
+import { renderAvatarToCanvas, AvatarStyle, AvatarOptions } from '../utils/avatarUtils';
 
 interface ProceduralAvatarProps {
   name: string;
@@ -12,6 +12,9 @@ interface ProceduralAvatarProps {
   height?: number;
   className?: string;
   canvasStyle?: React.CSSProperties;
+  tenureDays?: AvatarOptions['tenureDays'];
+  specialization?: AvatarOptions['specialization'];
+  rarityTier?: AvatarOptions['rarityTier'];
 }
 
 export function ProceduralAvatar({
@@ -23,14 +26,20 @@ export function ProceduralAvatar({
   height = 560,
   className,
   canvasStyle,
+  tenureDays,
+  specialization,
+  rarityTier,
 }: ProceduralAvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    renderAvatarToCanvas(canvas, { name, role, goal, seed, style, hueOverride, width, height });
-  }, [name, role, goal, seed, style, hueOverride, width, height]);
+    renderAvatarToCanvas(canvas, {
+      name, role, goal, seed, style, hueOverride, width, height,
+      tenureDays, specialization, rarityTier,
+    });
+  }, [name, role, goal, seed, style, hueOverride, width, height, tenureDays, specialization, rarityTier]);
 
   return (
     <canvas

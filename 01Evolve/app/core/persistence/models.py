@@ -241,6 +241,14 @@ class UserAccountRecord(Base):
     is_system_account: Mapped[bool] = mapped_column(Boolean(), default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Human profile step (collected once, right after signup, before agent
+    # creation) -- both optional by design. age_range is a bucket label
+    # ("18-24" etc, see AGE_RANGE_OPTIONS in accounts/service.py), never a
+    # raw birthdate. avatar_data_url is a data: URI (uploaded photo, resized
+    # client-side) -- same storage pattern already used for agent portraits
+    # elsewhere in this app; capped size enforced at the API layer.
+    age_range: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    avatar_data_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
 
 class BosunCoreKnowledgeRecord(Base):

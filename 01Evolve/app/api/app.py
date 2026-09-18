@@ -214,6 +214,13 @@ class AccountXpAwardRequest(BaseModel):
     amount: int = Field(ge=-100_000, le=100_000)
 
 
+class AccountProfileUpdateRequest(BaseModel):
+    # Both optional and independent: the avatar step is explicitly
+    # skippable, age_range is collected separately from avatar upload.
+    age_range: str | None = Field(default=None, max_length=16)
+    avatar_data_url: str | None = Field(default=None, max_length=3_000_000)
+
+
 class BosunChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     # Both default false and are mutually independent: a user explicitly
@@ -400,6 +407,24 @@ def account_award_xp(payload: AccountXpAwardRequest, request: Request):
     account = services().accounts.award_xp(account_id, payload.amount)
     if not account:
         raise HTTPException(status_code=404, detail="account not found")
+    return {"account": account}
+
+
+@api.post("/account/profile")
+def account_update_profile(payload: AccountProfileUpdateRequest, request: Request):
+    """Sets the human-profile-step fields (age_range, avatar) collected once
+    right after signup, before agent creation. Not behind the beta token --
+    see account_signup's comment; same reasoning applies here."""
+    enforce_rate_limit(request, "account-profile", limit=20, window_seconds=60)
+    account_id = _current_account_id(request)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    try:
+        account = services().accounts.update_profile(
+            account_id, age_range=payload.age_range, avatar_data_url=payload.avatar_data_url
+        )
+    except AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"account": account}
 
 
