@@ -1005,6 +1005,66 @@ class Repository:
             for row in rows
         ]
 
+    def get_incoming_direct_messages_for_account(
+        self,
+        account_id: str,
+        after_id: int | None = None,
+        limit: int = 100,
+    ) -> list[DirectMessage]:
+        """Cross-conversation inbox view for one account: every DM sent *to*
+        it (not by it) across all of its conversations, oldest-first.
+
+        Built for the OpenClaw presence bridge (see POST
+        /messages/external/send and GET /messages/external/pending): the
+        bridge tracks one global after_id cursor per account rather than a
+        cursor per conversation, which DirectMessageRecord.id (a single
+        autoincrement sequence shared across all conversations) makes safe --
+        no risk of two different conversations reusing the same id.
+        """
+        conversation_ids = [
+            row.conversation_id
+            for row in self.session.scalars(
+                select(DirectConversationRecord).where(
+                    or_(
+                        DirectConversationRecord.account_a_id == account_id,
+                        DirectConversationRecord.account_b_id == account_id,
+                    )
+                )
+            ).all()
+        ]
+        if not conversation_ids:
+            return []
+        query = select(DirectMessageRecord).where(
+            DirectMessageRecord.conversation_id.in_(conversation_ids),
+            DirectMessageRecord.sender_account_id != account_id,
+        )
+        if after_id is not None:
+            query = query.where(DirectMessageRecord.id > after_id)
+        query = query.order_by(DirectMessageRecord.id).limit(limit)
+        rows = self.session.scalars(query).all()
+        sender_ids = {row.sender_account_id for row in rows}
+        senders: dict[str, UserAccountRecord] = {}
+        for sid in sender_ids:
+            rec = self.session.scalar(select(UserAccountRecord).where(UserAccountRecord.account_id == sid))
+            if rec:
+                senders[sid] = rec
+        return [
+            DirectMessage(
+                message_id=row.id,
+                conversation_id=row.conversation_id,
+                sender=self._presence_from_account(senders[row.sender_account_id])
+                if row.sender_account_id in senders
+                else AccountPresence(
+                    account_id=row.sender_account_id,
+                    username=row.sender_account_id,
+                    display_name=row.sender_account_id,
+                ),
+                content=row.content,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
     # ------------------------------------------------------------------
     # Forum
     # ------------------------------------------------------------------

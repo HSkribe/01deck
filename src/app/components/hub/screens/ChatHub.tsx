@@ -348,11 +348,14 @@ export function ChatHub() {
     setCurrentView('messages');
   };
 
-  // System accounts (Bosun) don't participate in the generic DM backend --
-  // nothing there ever replies as them. Route those clicks to a dedicated
-  // chat surface that hits /bosun/chat directly instead.
+  // Bosun specifically doesn't participate in the generic DM backend --
+  // nothing there replies as him, since he only exists via POST /bosun/chat.
+  // Route only him to the dedicated chat surface. Other system accounts
+  // (e.g. an OpenClaw agent synced in via the presence bridge) are real DM
+  // participants -- the bridge relays replies through the normal /messages/*
+  // flow -- so they go through the same handleDmUser path as human accounts.
   const handleRosterUserClick = (account: AccountPresence) => {
-    if (account.is_system_account) {
+    if (account.account_id === 'bosun') {
       setBosunChatWith(account);
       return;
     }

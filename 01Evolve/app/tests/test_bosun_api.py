@@ -184,7 +184,7 @@ def test_external_presence_sync_creates_account_and_shows_online(client, monkeyp
         headers=admin_headers,
     )
     assert resp.status_code == 200
-    account_id = resp.json()["synced"][0]
+    account_id = resp.json()["synced"][0]["account_id"]
     assert account_id.startswith("oc_")
 
     online = client.get("/presence/online").json()["online"]
@@ -214,6 +214,6 @@ def test_external_presence_sync_is_idempotent_per_session_key(client, monkeypatc
     assert first.json()["synced"] == second.json()["synced"]
 
     online = client.get("/presence/online").json()["online"]
-    matching = [a for a in online if a["account_id"] == first.json()["synced"][0]]
+    matching = [a for a in online if a["account_id"] == first.json()["synced"][0]["account_id"]]
     assert len(matching) == 1
     assert matching[0]["display_name"] == "Moss Renamed"

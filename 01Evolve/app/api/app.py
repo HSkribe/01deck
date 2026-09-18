@@ -247,6 +247,12 @@ class ExternalAgentPresenceSyncRequest(BaseModel):
     agents: list[ExternalAgentPresenceEntry] = Field(default_factory=list, max_length=50)
 
 
+class ExternalAgentSendRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=64)
+    conversation_id: str = Field(min_length=1, max_length=64)
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class ChatMessagePayload(BaseModel):
     role: str
     content: str = Field(min_length=1, max_length=8000)
@@ -563,7 +569,12 @@ def sync_external_agent_presence(payload: ExternalAgentPresenceSyncRequest, requ
         account_id, username = _external_agent_identity(entry.session_key, entry.display_name)
         repo.upsert_external_agent_account(account_id, username, entry.display_name)
         repo.upsert_presence_heartbeat(account_id)
-        synced.append(account_id)
+        # Echo session_key back paired with the derived account_id so the
+        # bridge can keep its own local session_key <-> account_id map --
+        # the hash is one-way, so the bridge is the only place that can
+        # associate an account_id back to the OpenClaw session it must
+        # deliver messages into.
+        synced.append({"session_key": entry.session_key, "account_id": account_id})
     return {"synced": synced}
 
 
@@ -857,6 +868,56 @@ def messages_list_conversations(request: Request):
     enforce_rate_limit(request, "messages-conversations", limit=60, window_seconds=60)
     convs = services().social.list_conversations(account_id)
     return {"conversations": convs}
+
+
+def _require_system_account(account_id: str):
+    account = services().repository.get_account_by_id(account_id)
+    if not account or not account.is_system_account:
+        raise HTTPException(status_code=404, detail="not a system account")
+
+
+# Registered before /messages/{conversation_id} and /messages/{conversation_id}/send
+# on purpose -- Starlette matches routes in registration order, and a generic
+# single-segment path param would otherwise swallow "external" as a
+# conversation_id before these more specific routes ever got a chance to run.
+@api.get("/messages/external/pending")
+def messages_external_pending(
+    account_id: str,
+    request: Request,
+    after_id: int | None = None,
+    limit: int = 100,
+):
+    """Cross-conversation inbox for one system account -- lets a trusted
+    bridge (e.g. the OpenClaw presence bridge) discover new incoming DMs
+    addressed to an agent it represents, without needing to already know
+    every conversation_id. Restricted to system accounts: a real human's
+    inbox must never be readable through an admin token."""
+    _require_bosun_admin(request)
+    _require_system_account(account_id)
+    messages = services().repository.get_incoming_direct_messages_for_account(
+        account_id=account_id, after_id=after_id, limit=limit
+    )
+    return {"messages": messages}
+
+
+@api.post("/messages/external/send")
+def messages_external_send(payload: ExternalAgentSendRequest, request: Request):
+    """Lets a trusted bridge send a DM *as* a system account it represents --
+    the human-side equivalent of POST /messages/{conversation_id}/send,
+    which only lets the currently-signed-in account send as itself. System
+    accounts (Bosun, bridged external agents) authenticate via password
+    hashes deliberately no login can produce, so they need this instead."""
+    _require_bosun_admin(request)
+    _require_system_account(payload.account_id)
+    try:
+        message = services().social.send_direct_message(
+            caller_account_id=payload.account_id,
+            conversation_id=payload.conversation_id,
+            content=payload.content,
+        )
+    except SocialError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {"message": message}
 
 
 @api.post("/messages/{conversation_id}/send")

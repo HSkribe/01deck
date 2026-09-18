@@ -341,6 +341,99 @@ def test_dm_cursor_pagination(client):
 
 
 # ===========================================================================
+# Direct messages — external agent bridge (OpenClaw presence bridge)
+# ===========================================================================
+
+
+def _sync_one_external_agent(client, admin_headers, session_key="agent:main:dashboard:test", display_name="Moss"):
+    resp = client.post(
+        "/presence/external/sync",
+        json={"agents": [{"session_key": session_key, "display_name": display_name}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["synced"][0]["account_id"]
+
+
+def test_external_pending_and_send_require_admin(client):
+    resp = client.get("/messages/external/pending?account_id=oc_whatever")
+    assert resp.status_code == 403
+
+    resp = client.post(
+        "/messages/external/send",
+        json={"account_id": "oc_whatever", "conversation_id": "x", "content": "hi"},
+    )
+    assert resp.status_code == 403
+
+
+def test_external_pending_and_send_reject_non_system_accounts(client, monkeypatch):
+    monkeypatch.setenv("BETA_ACCESS_TOKEN", "test-admin-token")
+    client.post("/auth/session", json={"token": "test-admin-token"})
+    admin_headers = {"Authorization": "Bearer test-admin-token"}
+
+    human = _signup_and_login(client, "human_np2")
+    human_id = human["account_id"]
+    _logout(client)
+
+    pending = client.get(f"/messages/external/pending?account_id={human_id}", headers=admin_headers)
+    assert pending.status_code == 404
+
+    send = client.post(
+        "/messages/external/send",
+        json={"account_id": human_id, "conversation_id": "x", "content": "hi"},
+        headers=admin_headers,
+    )
+    assert send.status_code == 404
+
+
+def test_external_agent_can_receive_and_reply_to_dm(client, monkeypatch):
+    monkeypatch.setenv("BETA_ACCESS_TOKEN", "test-admin-token")
+    client.post("/auth/session", json={"token": "test-admin-token"})
+    admin_headers = {"Authorization": "Bearer test-admin-token"}
+
+    moss_id = _sync_one_external_agent(client, admin_headers)
+
+    human = _signup_and_login(client, "human_moss")
+    conv_id = client.post("/messages/start", json={"other_account_id": moss_id}).json()["conversation_id"]
+    client.post(f"/messages/{conv_id}/send", json={"content": "hi Moss"})
+    _logout(client)
+
+    # Bridge discovers the new incoming message across all of Moss's conversations.
+    pending = client.get(f"/messages/external/pending?account_id={moss_id}", headers=admin_headers)
+    assert pending.status_code == 200
+    messages = pending.json()["messages"]
+    assert len(messages) == 1
+    assert messages[0]["content"] == "hi Moss"
+    assert messages[0]["conversation_id"] == conv_id
+    last_id = messages[0]["message_id"]
+
+    # A second poll with after_id sees nothing new.
+    pending_again = client.get(
+        f"/messages/external/pending?account_id={moss_id}&after_id={last_id}", headers=admin_headers
+    )
+    assert pending_again.json()["messages"] == []
+
+    # Bridge relays Moss's real reply back into the same conversation.
+    reply = client.post(
+        "/messages/external/send",
+        json={"account_id": moss_id, "conversation_id": conv_id, "content": "Hello, human."},
+        headers=admin_headers,
+    )
+    assert reply.status_code == 200
+    assert reply.json()["message"]["sender"]["account_id"] == moss_id
+
+    _login(client, "human_moss")
+    thread = client.get(f"/messages/{conv_id}").json()["messages"]
+    assert [m["content"] for m in thread] == ["hi Moss", "Hello, human."]
+
+    # The reply Moss himself sent doesn't show up as "pending" for Moss again.
+    still_pending = client.get(
+        f"/messages/external/pending?account_id={moss_id}&after_id={last_id}", headers=admin_headers
+    )
+    assert still_pending.json()["messages"] == []
+
+
+# ===========================================================================
 # Forum — create thread
 # ===========================================================================
 
