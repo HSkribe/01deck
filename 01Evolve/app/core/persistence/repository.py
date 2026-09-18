@@ -1202,6 +1202,42 @@ class Repository:
         )
         self.session.commit()
 
+    def upsert_external_agent_account(self, account_id: str, username: str, display_name: str) -> None:
+        """Idempotently create or refresh a system account for an agent
+        bridged in from an external system (e.g. one reported by the
+        OpenClaw presence bridge script via POST /presence/external/sync).
+
+        Unlike ensure_bosun_account, this also updates display_name on
+        repeat calls, since these accounts are created dynamically from
+        whatever label the external session currently has -- a renamed
+        session should show the new name, not create a duplicate account.
+        Presence itself is a separate call (upsert_presence_heartbeat); this
+        method only owns the account row.
+        """
+        existing = self.session.scalar(
+            select(UserAccountRecord).where(UserAccountRecord.account_id == account_id)
+        )
+        if existing:
+            if existing.display_name != display_name:
+                existing.display_name = display_name
+                self.session.commit()
+            return
+        self.session.add(
+            UserAccountRecord(
+                account_id=account_id,
+                username=username,
+                display_name=display_name,
+                email=None,
+                # Same unusable-placeholder pattern as ensure_bosun_account --
+                # these accounts never authenticate via password.
+                password_hash="SYSTEM_ACCOUNT_NO_PASSWORD",
+                password_salt="00" * 16,
+                password_iterations=1,
+                is_system_account=True,
+            )
+        )
+        self.session.commit()
+
     # -----------------------------------------------------------------
     # Bosun memory tiers — see app/core/bosun/service.py for the tier
     # semantics (core knowledge / shared / per-user / raw turns).

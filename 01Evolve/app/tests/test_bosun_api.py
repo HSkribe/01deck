@@ -163,3 +163,57 @@ def test_bosun_chat_rate_limited_per_account(client):
 
     limited = client.post("/bosun/chat", json={"message": "ping"})
     assert limited.status_code == 429
+
+
+def test_external_presence_sync_requires_admin(client):
+    resp = client.post(
+        "/presence/external/sync",
+        json={"agents": [{"session_key": "agent:main:dashboard:abc", "display_name": "Moss"}]},
+    )
+    assert resp.status_code == 403
+
+
+def test_external_presence_sync_creates_account_and_shows_online(client, monkeypatch):
+    monkeypatch.setenv("BETA_ACCESS_TOKEN", "test-admin-token")
+    client.post("/auth/session", json={"token": "test-admin-token"})
+    admin_headers = {"Authorization": "Bearer test-admin-token"}
+
+    resp = client.post(
+        "/presence/external/sync",
+        json={"agents": [{"session_key": "agent:main:dashboard:abc", "display_name": "Moss"}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    account_id = resp.json()["synced"][0]
+    assert account_id.startswith("oc_")
+
+    online = client.get("/presence/online").json()["online"]
+    matching = [a for a in online if a["account_id"] == account_id]
+    assert len(matching) == 1
+    assert matching[0]["display_name"] == "Moss"
+    assert matching[0]["is_system_account"] is True
+
+
+def test_external_presence_sync_is_idempotent_per_session_key(client, monkeypatch):
+    monkeypatch.setenv("BETA_ACCESS_TOKEN", "test-admin-token")
+    client.post("/auth/session", json={"token": "test-admin-token"})
+    admin_headers = {"Authorization": "Bearer test-admin-token"}
+
+    first = client.post(
+        "/presence/external/sync",
+        json={"agents": [{"session_key": "agent:main:dashboard:abc", "display_name": "Moss"}]},
+        headers=admin_headers,
+    )
+    # Renamed on a later sync -- same session_key must resolve to the same
+    # account_id and just update the display name, not create a duplicate.
+    second = client.post(
+        "/presence/external/sync",
+        json={"agents": [{"session_key": "agent:main:dashboard:abc", "display_name": "Moss Renamed"}]},
+        headers=admin_headers,
+    )
+    assert first.json()["synced"] == second.json()["synced"]
+
+    online = client.get("/presence/online").json()["online"]
+    matching = [a for a in online if a["account_id"] == first.json()["synced"][0]]
+    assert len(matching) == 1
+    assert matching[0]["display_name"] == "Moss Renamed"

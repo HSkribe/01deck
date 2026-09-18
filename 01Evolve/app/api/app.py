@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 
 from fnmatch import fnmatch
 
@@ -230,6 +232,19 @@ class BosunSharedMemoryReviewRequest(BaseModel):
 class BosunCoreKnowledgeUpsertRequest(BaseModel):
     key: str = Field(min_length=1, max_length=128)
     content: str = Field(min_length=1, max_length=4000)
+
+
+class ExternalAgentPresenceEntry(BaseModel):
+    # Opaque identifier from the external system (e.g. an OpenClaw session
+    # key like "agent:main:dashboard:<uuid>") -- never shown to users, only
+    # hashed into a stable account_id. Not validated for shape since callers
+    # (bridge scripts) may use very different key formats.
+    session_key: str = Field(min_length=1, max_length=512)
+    display_name: str = Field(min_length=1, max_length=64)
+
+
+class ExternalAgentPresenceSyncRequest(BaseModel):
+    agents: list[ExternalAgentPresenceEntry] = Field(default_factory=list, max_length=50)
 
 
 class ChatMessagePayload(BaseModel):
@@ -515,6 +530,41 @@ def bosun_upsert_core_knowledge(payload: BosunCoreKnowledgeUpsertRequest, reques
     _require_bosun_admin(request)
     services().repository.upsert_bosun_core_knowledge(payload.key, payload.content)
     return {"key": payload.key, "content": payload.content}
+
+
+_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _external_agent_identity(session_key: str, display_name: str) -> tuple[str, str]:
+    """Derive a stable (account_id, username) pair from an external system's
+    own session key, never the raw key itself: account_id is capped at 64
+    chars by the schema, and arbitrary external key formats (colons, uuids)
+    aren't guaranteed to fit or to be safe usernames. Hashing also means a
+    renamed display_name doesn't create a second account for the same
+    session -- the identity is keyed on session_key, not the label."""
+    digest = hashlib.sha256(session_key.encode("utf-8")).hexdigest()[:20]
+    account_id = f"oc_{digest}"
+    slug = _SLUG_NON_ALNUM.sub("_", display_name.strip().lower()).strip("_")[:32] or "agent"
+    username = f"oc_{slug}_{digest[:8]}"
+    return account_id, username
+
+
+@api.post("/presence/external/sync")
+def sync_external_agent_presence(payload: ExternalAgentPresenceSyncRequest, request: Request):
+    """Lets a trusted local bridge (e.g. the OpenClaw presence bridge script)
+    report which of its own agent sessions are currently active, so they
+    show up in /presence/online alongside Bosun and real accounts. Gated the
+    same as Bosun's admin endpoints: this can create accounts, which is an
+    admin-level capability, not something any signed-in user should trigger."""
+    _require_bosun_admin(request)
+    repo = services().repository
+    synced = []
+    for entry in payload.agents:
+        account_id, username = _external_agent_identity(entry.session_key, entry.display_name)
+        repo.upsert_external_agent_account(account_id, username, entry.display_name)
+        repo.upsert_presence_heartbeat(account_id)
+        synced.append(account_id)
+    return {"synced": synced}
 
 
 @api.post("/agents")
